@@ -140,7 +140,8 @@ export default function BookingScreen({ navigation }) {
   const fetchTakenTimes = async (selectedDate) => {
     setLoadingSlots(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/appointments/check-availability?date=${selectedDate}&dentist=${dentist}`);
+      // UPDATED: Now pointing to the correct Supabase-connected route
+      const response = await fetch(`${API_BASE_URL}/api/booked-times?date=${selectedDate}&dentist=${dentist}`);
       const data = await response.json();
       if (response.ok) setTakenTimes(data || []);
       else setTakenTimes([]);

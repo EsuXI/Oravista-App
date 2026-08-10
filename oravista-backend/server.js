@@ -247,6 +247,31 @@ app.get('/api/user-billings/:userId', async (req, res) => {
     } catch (err) { res.status(500).json({ message: "Error" }); }
 });
 
+app.get('/api/booked-times', async (req, res) => {
+    const { date, dentist } = req.query;
+    try {
+        const { data: appointments, error } = await supabase
+            .from('appointments')
+            .select('appointment_time, service_type')
+            .eq('appointment_date', date)
+            .eq('dentist_name', dentist)
+            .neq('status', 'Cancelled');
+            
+        if (error) throw error;
+
+        // Format the data exactly how your frontend overlap calculator expects it
+        const bookedTimes = appointments.map(app => ({
+            time: app.appointment_time,
+            service_type: app.service_type
+        }));
+        
+        res.status(200).json(bookedTimes);
+    } catch (err) { 
+        console.error(err);
+        res.status(500).json({ message: "Error fetching booked times" }); 
+    }
+});
+
 app.post('/api/book-appointment', async (req, res) => {
     const { user_id, service_type, dentist_name, appointment_date, appointment_time } = req.body;
     try {
