@@ -1,0 +1,1 @@
+SELECT * FROM oravista_db.appointments;
