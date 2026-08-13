@@ -73,7 +73,10 @@ export default function BillingsScreen({ navigation }) {
       Alert.alert("Not Available", "No invoice PDF has been generated for this transaction yet.");
       return;
     }
-    const fileUrl = `${API_BASE_URL}/${path}`;
+    
+    // Check if the path is already a full web link. If not, attach the API base URL.
+    const fileUrl = path.startsWith('http') ? path : `${API_BASE_URL}/${path}`;
+    
     Linking.openURL(fileUrl).catch(() => {
       Alert.alert("Error", "Could not open document.");
     });

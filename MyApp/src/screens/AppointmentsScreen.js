@@ -17,7 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { API_BASE_URL } from '../config/config';
 import ScreenHeader from "../components/ScreenHeader";
 
-const FILTERS = ["All", "Confirmed", "Pending", "Cancelled"];
+const FILTERS = ["All", "Confirmed", "Pending", "Completed", "Cancelled"];
 
 export default function AppointmentsScreen({ navigation }) {
   const [appointments, setAppointments] = useState([]);
@@ -198,6 +198,8 @@ const styles = StyleSheet.create({
   pendingText: { color: "#92400E" },
   cancelledBg: { backgroundColor: "#FEE2E2" },
   cancelledText: { color: "#991B1B" },
+  completedBg: { backgroundColor: "#DBEAFE" },
+  completedText: { color: "#1E40AF" },
   infoRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 6 },
   infoText: { fontSize: 13, color: "#4B5563", fontFamily: fonts.medium },
   cancelBtn: { marginTop: 16, backgroundColor: "#FFFFFF", padding: 12, borderRadius: 14, alignItems: "center", borderWidth: 1, borderColor: "#FCA5A5" },

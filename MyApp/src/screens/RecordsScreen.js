@@ -64,7 +64,13 @@ export default function RecordsScreen() {
   });
 
   const handleDownload = (filePath) => {
-    const fileUrl = `${API_BASE_URL}/${filePath}`;
+    if (!filePath) {
+      Alert.alert("Not Available", "No document has been attached to this record yet.");
+      return;
+    }
+    
+    const fileUrl = filePath.startsWith('http') ? filePath : `${API_BASE_URL}/${filePath}`;
+    
     Linking.openURL(fileUrl).catch(() => {
       Alert.alert("Error", "Could not open document. Check your connection.");
     });
