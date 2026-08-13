@@ -18,9 +18,13 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+const isVercel = process.env.VERCEL === '1';
+const uploadDir = isVercel ? '/tmp/uploads' : path.join(__dirname, 'uploads');
+app.use('/uploads', express.static(uploadDir));
+
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 // ---------------------------------------------------------
 // EMAIL TRANSPORTER SETUP
@@ -35,13 +39,13 @@ const transporter = nodemailer.createTransport({
 });
 
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'uploads/'),
+    destination: (req, file, cb) => cb(null, uploadDir),
     filename: (req, file, cb) => cb(null, 'profile_' + Date.now() + path.extname(file.originalname))
 });
 const upload = multer({ storage: storage });
 
 const recordStorage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'uploads/'),
+    destination: (req, file, cb) => cb(null, uploadDir),
     filename: (req, file, cb) => cb(null, 'record_' + Date.now() + path.extname(file.originalname))
 });
 const uploadRecord = multer({ storage: recordStorage });
@@ -338,5 +342,12 @@ app.get('/api/user-profile', async (req, res) => {
     } catch (err) { res.status(500).json({ message: "Error" }); }
 });
 
-const PORT = 5000;
-app.listen(PORT, '0.0.0.0', () => console.log(`OraVista Backend running on port ${PORT}`));
+const PORT = process.env.PORT || 5000;
+
+// Only listen on a port if we are NOT on Vercel
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, '0.0.0.0', () => console.log(`OraVista Backend running on port ${PORT}`));
+}
+
+// VERCEL FIX: Export the app so Vercel can run it
+module.exports = app;
