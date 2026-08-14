@@ -40,22 +40,21 @@ const DENTISTS_BY_BRANCH = {
 
 const SERVICE_CATEGORIES = {
   "General Dentistry": [
-    { name: "Consultation", duration: 30, price: "₱300" },
     { name: "Oral Prophylaxis", duration: 30, price: "Starts ₱500" },
-    { name: "Restoration (Pasta)", duration: 60, price: "Starts ₱500" },
-    { name: "Extraction (Bunot)", duration: 60, price: "Starts ₱700" },
+    { name: "Restoration", duration: 60, price: "Starts ₱500" },
+    { name: "Extraction", duration: 60, price: "Starts ₱700" },
   ],
   "Orthodontics (Braces, Veneers)": [
-    { name: "Orthodontics Installation", duration: 60, price: "₱4k DP" },
+    { name: "Orthodontics Installation", duration: 60, price: "₱4,000 DP" },
     { name: "Orthodontics Adjustment", duration: 30, price: "₱1,000" },
     { name: "Veneers / Esthetics", duration: 120, price: "Starts ₱3,500" },
   ],
   "Restorative Treatments": [
-    { name: "Fixed Bridge / Crown", duration: 120, price: "Starts ₱3,500" },
-    { name: "Root Canal Treatment", duration: 120, price: "Inquire" },
-    { name: "Wisdom Tooth Surgery", duration: 180, price: "Inquire" },
-    { name: "Dentures", duration: 30, price: "Inquire" },
-    { name: "Whitening", duration: 90, price: "Inquire" },
+    { name: "Root Canal Treatment", duration: 120, price: "Case to Case" },
+    { name: "Wisdom Tooth Surgery", duration: 180, price: "Case to Case" },
+    { name: "Dentures", duration: 30, price: "Case to Case" },
+    { name: "Fixed Bridge", duration: 120, price: "Starts ₱3,500" },
+    { name: "Whitening", duration: 90, price: "Case to Case" },
   ],
 };
 
@@ -244,17 +243,33 @@ export default function BookingScreen({ route, navigation }) {
           <>
             <Text style={styles.label}>Choose Service</Text>
             <TouchableOpacity style={styles.dropdown} onPress={() => setOpenDropdown(openDropdown === "srv" ? null : "srv")}>
-              <View style={styles.dropdownRow}><Text style={styles.dropdownText}>{service ? `${service.name} (${service.duration / 60}hr)` : "Choose service"}</Text><Ionicons name="chevron-down" size={18} color="#6B7280" /></View>
+              <View style={styles.dropdownRow}>
+                {/* FIX: Make sure the selected service displays the price too */}
+                <Text style={styles.dropdownText}>
+                  {service ? `${service.name} • ${service.price} (${service.duration / 60}hr)` : "Choose service"}
+                </Text>
+                <Ionicons name="chevron-down" size={18} color="#6B7280" />
+              </View>
             </TouchableOpacity>
+            
             {openDropdown === "srv" && (
               <View style={styles.dropdownList}>
                 {SERVICE_CATEGORIES[category].map((s) => (
                   <TouchableOpacity key={s.name} style={styles.dropdownItem} onPress={() => { setService(s); setDate(null); setOpenDropdown(null); }}>
+                    {/* FIX: Dropdown items now show the price */}
                     <Text style={styles.itemText}>{s.name} • {s.price} ({(s.duration / 60).toFixed(1).replace(".0", "")}hr)</Text>
                   </TouchableOpacity>
                 ))}
               </View>
             )}
+
+            {/* NEW: Transparency Note for Patients */}
+            <View style={{ flexDirection: 'row', marginTop: 10, paddingHorizontal: 6, alignItems: 'flex-start' }}>
+               <Ionicons name="information-circle" size={15} color="#001166" style={{ marginRight: 6, marginTop: 1 }}/>
+               <Text style={{ fontSize: 11, color: "#6B7280", fontFamily: fonts.medium, flex: 1, lineHeight: 16 }}>
+                 Prices marked as "Case to Case" or "Starts at" depend on the severity of the tooth or materials used. Final costs are determined during consultation.
+               </Text>
+            </View>
           </>
         )}
 
