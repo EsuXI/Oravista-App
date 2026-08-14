@@ -380,7 +380,7 @@ app.get('/api/patient-records/:userId', async (req, res) => {
     try {
         const { data: records, error } = await supabase
             .from('patient_records')
-            .select('id, file_name, file_path, upload_date')
+            .select('id, file_name, file_path, upload_date, clinic_branch, dentist_name')
             .eq('user_id', req.params.userId)
             .order('upload_date', { ascending: false });
             
