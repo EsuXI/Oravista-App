@@ -25,8 +25,6 @@ export default function AppointmentsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("All");
-  
-  // FIX: Added pagination state
   const [page, setPage] = useState(1);
 
   const fetchAppointments = async () => {
@@ -64,12 +62,16 @@ export default function AppointmentsScreen({ navigation }) {
     const formattedDate = new Date(item.appointment_date).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
     const searchLower = searchQuery.toLowerCase();
 
+    // Check branch address in search as well
+    const branchName = item.branch_address ? item.branch_address.toLowerCase() : "2015 gil puyat, pasay city";
+
     const matchesSearch = 
       item.dentist_name?.toLowerCase().includes(searchLower) ||
       item.service_type?.toLowerCase().includes(searchLower) ||
       item.booking_ref?.toLowerCase().includes(searchLower) ||
       item.appointment_time?.toLowerCase().includes(searchLower) ||
       item.appointment_date?.toLowerCase().includes(searchLower) ||
+      branchName.includes(searchLower) ||
       formattedDate.toLowerCase().includes(searchLower);
 
     return matchesFilter && matchesSearch;
@@ -111,6 +113,9 @@ export default function AppointmentsScreen({ navigation }) {
 
   const renderItem = ({ item }) => {
     const formattedDate = new Date(item.appointment_date).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+    
+    // FIX: Show the real King Epres branch. Defaults to Main Branch if none is saved in DB.
+    const displayAddress = item.branch_address || "2015 Gil puyat, Pasay City";
 
     return (
       <View style={styles.card}>
@@ -132,7 +137,7 @@ export default function AppointmentsScreen({ navigation }) {
         </View>
         <View style={styles.infoRow}>
           <Ionicons name="location-outline" size={14} color="#6B7280" />
-          <Text style={styles.infoText}>OraVista Clinic</Text>
+          <Text style={styles.infoText} numberOfLines={1}>{displayAddress}</Text>
         </View>
         <View style={styles.infoRow}>
           <Ionicons name="calendar-outline" size={14} color="#6B7280" />
@@ -145,7 +150,6 @@ export default function AppointmentsScreen({ navigation }) {
           </TouchableOpacity>
         )}
 
-        {/* FIX: Added Reschedule button for Cancelled appointments */}
         {item.status === "Cancelled" && (
           <TouchableOpacity onPress={() => navigation.navigate("Booking")} style={styles.rescheduleBtn}>
             <Text style={styles.rescheduleText}>Reschedule Appointment</Text>
@@ -241,7 +245,7 @@ const styles = StyleSheet.create({
   completedBg: { backgroundColor: "#DBEAFE" },
   completedText: { color: "#1E40AF" },
   infoRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 6 },
-  infoText: { fontSize: 13, color: "#4B5563", fontFamily: fonts.medium },
+  infoText: { fontSize: 13, color: "#4B5563", fontFamily: fonts.medium, flexShrink: 1 },
   cancelBtn: { marginTop: 16, backgroundColor: "#FFFFFF", padding: 12, borderRadius: 14, alignItems: "center", borderWidth: 1, borderColor: "#FCA5A5" },
   cancelText: { color: "#DC2626", fontFamily: fonts.bold, fontSize: 13 },
   rescheduleBtn: { marginTop: 16, backgroundColor: "#F5F8FF", padding: 12, borderRadius: 14, alignItems: "center", borderWidth: 1, borderColor: "#001166" },

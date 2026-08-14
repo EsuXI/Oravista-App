@@ -318,12 +318,22 @@ app.get('/api/booked-times', async (req, res) => {
 });
 
 app.post('/api/book-appointment', async (req, res) => {
-    const { user_id, service_type, dentist_name, appointment_date, appointment_time } = req.body;
+    // FIX: Added branch_address to the incoming request
+    const { user_id, service_type, dentist_name, appointment_date, appointment_time, branch_address } = req.body;
     try {
         const booking_ref = `OV - ${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
         
         const { error } = await supabase.from('appointments').insert([
-            { user_id, booking_ref, service_type, dentist_name, appointment_date, appointment_time, status: 'Pending' }
+            { 
+                user_id, 
+                booking_ref, 
+                service_type, 
+                dentist_name, 
+                appointment_date, 
+                appointment_time, 
+                branch_address,
+                status: 'Pending' 
+            }
         ]);
         if (error) throw error;
         

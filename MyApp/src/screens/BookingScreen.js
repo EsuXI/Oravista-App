@@ -157,6 +157,11 @@ export default function BookingScreen({ navigation }) {
       { text: "Cancel", style: "cancel" },
       { text: "Confirm", onPress: async () => {
           try {
+            // FIX: Map the selected branch to the real Google Maps address
+            let fullBranchAddress = "2015 Gil puyat, Pasay City"; // Default
+            if (branch === "Sta. Ana Branch") fullBranchAddress = "2566 Tejeron, Sta Ana, Manila";
+            if (branch === "Balibago Branch") fullBranchAddress = "Sandico Arcade, MacArthur Hwy, Balibago, Angeles City";
+
             const response = await fetch(`${API_BASE_URL}/api/book-appointment`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -165,7 +170,8 @@ export default function BookingScreen({ navigation }) {
                 service_type: service.name, 
                 dentist_name: dentist, 
                 appointment_date: date, 
-                appointment_time: time 
+                appointment_time: time,
+                branch_address: fullBranchAddress // FIX: Now sending the branch to the backend!
               })
             });
             if (response.ok) {
