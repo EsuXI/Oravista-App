@@ -40,21 +40,22 @@ const DENTISTS_BY_BRANCH = {
 
 const SERVICE_CATEGORIES = {
   "General Dentistry": [
-    { name: "Oral Prophylaxis", duration: 30 },
-    { name: "Restoration", duration: 60 },
-    { name: "Extraction", duration: 60 },
+    { name: "Consultation", duration: 30, price: "₱300" },
+    { name: "Oral Prophylaxis", duration: 30, price: "Starts ₱500" },
+    { name: "Restoration (Pasta)", duration: 60, price: "Starts ₱500" },
+    { name: "Extraction (Bunot)", duration: 60, price: "Starts ₱700" },
   ],
   "Orthodontics (Braces, Veneers)": [
-    { name: "Orthodontics Installation", duration: 60 },
-    { name: "Orthodontics Adjustment", duration: 30 },
-    { name: "Veneers / Esthetics", duration: 120 },
+    { name: "Orthodontics Installation", duration: 60, price: "₱4k DP" },
+    { name: "Orthodontics Adjustment", duration: 30, price: "₱1,000" },
+    { name: "Veneers / Esthetics", duration: 120, price: "Starts ₱3,500" },
   ],
   "Restorative Treatments": [
-    { name: "Root Canal Treatment", duration: 120 },
-    { name: "Wisdom Tooth Surgery", duration: 180 },
-    { name: "Dentures", duration: 30 },
-    { name: "Fixed Bridge", duration: 120 },
-    { name: "Whitening", duration: 90 },
+    { name: "Fixed Bridge / Crown", duration: 120, price: "Starts ₱3,500" },
+    { name: "Root Canal Treatment", duration: 120, price: "Inquire" },
+    { name: "Wisdom Tooth Surgery", duration: 180, price: "Inquire" },
+    { name: "Dentures", duration: 30, price: "Inquire" },
+    { name: "Whitening", duration: 90, price: "Inquire" },
   ],
 };
 
@@ -249,7 +250,7 @@ export default function BookingScreen({ route, navigation }) {
               <View style={styles.dropdownList}>
                 {SERVICE_CATEGORIES[category].map((s) => (
                   <TouchableOpacity key={s.name} style={styles.dropdownItem} onPress={() => { setService(s); setDate(null); setOpenDropdown(null); }}>
-                    <Text style={styles.itemText}>{s.name} ({(s.duration / 60).toFixed(1).replace(".0", "")}hr)</Text>
+                    <Text style={styles.itemText}>{s.name} • {s.price} ({(s.duration / 60).toFixed(1).replace(".0", "")}hr)</Text>
                   </TouchableOpacity>
                 ))}
               </View>

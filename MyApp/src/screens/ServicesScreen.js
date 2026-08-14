@@ -7,44 +7,44 @@ import ScreenHeader from "../components/ScreenHeader";
 const SERVICES = [
   { 
     title: "General Dentistry", 
-    desc: "Oral Prophylaxis (Cleaning), Restoration (Fillings), and Extractions.", 
-    price: "Starts ₱1,000",
+    desc: "Oral Prophylaxis (Cleaning), Restorations, and Extractions.", 
+    price: "Starts ₱500",
     icon: "medical-outline",
     color: "#E0E7FF"
   },
   { 
-    title: "Orthodontics", 
-    desc: "Braces Installation, Monthly Adjustments, and Esthetic Veneers.", 
-    price: "Starts ₱1,000",
+    title: "Orthodontics (Braces)", 
+    desc: "Low downpayment braces with affordable monthly adjustments.", 
+    price: "₱4k DP",
     icon: "grid-outline",
     color: "#DCFCE7"
   },
   { 
-    title: "Restorative", 
-    desc: "Root Canal (RCT), Wisdom Tooth Surgery, and Fixed Bridges.", 
-    price: "Starts ₱8,000",
-    icon: "flask-outline",
+    title: "Veneers & Esthetics", 
+    desc: "Direct/Indirect Composite, Ceramage, and premium Emax veneers.", 
+    price: "Starts ₱3,500",
+    icon: "sparkles-outline",
     color: "#FEF3C7"
   },
   { 
-    title: "Dentures", 
-    desc: "Full or partial high-quality dentures for comfortable chewing.", 
-    price: "Starts ₱5,000",
-    icon: "happy-outline",
+    title: "Crowns & Bridges", 
+    desc: "Plastic, Porcelain Fused to Metal (PFM), and Zirconia options.", 
+    price: "Starts ₱3,500",
+    icon: "hardware-chip-outline",
     color: "#F3E8FF"
   },
   { 
-    title: "Dental Implants", 
-    desc: "Permanent artificial teeth that look and feel completely natural.", 
-    price: "Inquire Case",
-    icon: "infinite-outline",
+    title: "Consultation", 
+    desc: "Comprehensive checkup. Fee is waived if a procedure is done.", 
+    price: "₱300",
+    icon: "chatbubbles-outline",
     color: "#FFEDD5"
   },
   { 
-    title: "Teeth Whitening", 
-    desc: "Professional whitening treatment for a significantly brighter smile.", 
-    price: "₱7,000",
-    icon: "sparkles-outline",
+    title: "Oral Surgery", 
+    desc: "Root Canal Treatment (RCT) and Wisdom Tooth surgeries.", 
+    price: "Case to Case",
+    icon: "flask-outline",
     color: "#D1FAE5"
   },
 ];
@@ -52,7 +52,6 @@ const SERVICES = [
 export default function ServicesScreen() {
   return (
     <View style={styles.container}>
-      {/* Standard Curved Header */}
       <ScreenHeader title="Our Services" />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -79,7 +78,7 @@ export default function ServicesScreen() {
         <View style={styles.footerNote}>
           <Ionicons name="information-circle-outline" size={18} color="#9CA3AF" />
           <Text style={styles.footerText}>
-            Prices are base rates and may vary based on your specific dental case.
+            Prices are base rates for cash payments only. Rates vary based on specific cases and materials used.
           </Text>
         </View>
       </ScrollView>
@@ -103,7 +102,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: "#E5E7EB",
-    // 💡 Polished elevation for a subtle float effect
     shadowColor: "#001166",
     shadowOpacity: 0.05,
     shadowRadius: 12,
@@ -130,13 +128,12 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   priceText: {
-    fontSize: 8,
+    fontSize: 9,
     fontFamily: fonts.bold,
     color: "#4B5563",
     textTransform: "uppercase",
   },
   cardBody: {
-    // 💡 Ensuring consistent height across all cards[cite: 7]
     minHeight: 90, 
   },
   title: { 
@@ -161,10 +158,10 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   footerText: {
-    fontSize: 12,
+    fontSize: 11,
     fontFamily: fonts.medium,
     color: "#9CA3AF",
     textAlign: "center",
-    lineHeight: 18,
+    lineHeight: 16,
   },
 });
