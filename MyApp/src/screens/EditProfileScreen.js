@@ -26,8 +26,10 @@ export default function EditProfileScreen({ navigation }) {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [dob, setDob] = useState(""); 
   const [age, setAge] = useState("");
   const [occupation, setOccupation] = useState("");
+  const [address, setAddress] = useState(""); 
   
   const [profilePic, setProfilePic] = useState(null); 
   const [imageFile, setImageFile] = useState(null); 
@@ -46,13 +48,14 @@ export default function EditProfileScreen({ navigation }) {
           setLastName(data.last_name || "");
           setEmail(data.email || "");
           setPhone(data.phone || "");
-          
-          // Map the new fields
+          setDob(data.dob || ""); 
           setAge(data.age ? data.age.toString() : "");
           setOccupation(data.occupation || ""); 
+          setAddress(data.address || ""); 
           
           if (data.profile_picture) {
-            setProfilePic(`${API_BASE_URL}/${data.profile_picture}`);
+            // FIX: Image caching timestamp
+            setProfilePic(`${API_BASE_URL}/${data.profile_picture}?t=${new Date().getTime()}`);
           }
         }
       } catch (error) {
@@ -64,6 +67,23 @@ export default function EditProfileScreen({ navigation }) {
 
     loadProfile();
   }, []);
+
+  // Helper to auto-calculate age
+  const handleDobChange = (text) => {
+    setDob(text);
+    if (text.length === 10) { 
+      const birthDate = new Date(text);
+      if (!isNaN(birthDate)) {
+        const today = new Date();
+        let calculatedAge = today.getFullYear() - birthDate.getFullYear();
+        const m = today.getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+          calculatedAge--;
+        }
+        setAge(calculatedAge > 0 ? calculatedAge.toString() : "");
+      }
+    }
+  };
 
   const handleImagePick = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -92,12 +112,12 @@ export default function EditProfileScreen({ navigation }) {
     if (!lastName.trim()) newErrors.lastName = "Required";
     
     if (!phone.trim()) newErrors.phone = "Required";
-    else if (!/^09[0-9]{9}$/.test(phone)) newErrors.phone = "Must be a 11-digit number starting with 09";
+    else if (!/^09[0-9]{9}$/.test(phone)) newErrors.phone = "Must be an 11-digit number starting with 09";
     
-    if (!age.trim()) newErrors.age = "Required";
-    else if (isNaN(age)) newErrors.age = "Must be a number";
+    if (!dob.trim()) newErrors.dob = "Required (Format: YYYY-MM-DD)";
+    if (!address.trim()) newErrors.address = "Required";
 
-    if (!occupation.trim()) newErrors.occupation = "Required";
+    // Notice Occupation is missing here, making it optional
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -108,22 +128,7 @@ export default function EditProfileScreen({ navigation }) {
     setSaving(true);
 
     try {
-      const updateResponse = await fetch(`${API_BASE_URL}/api/update-profile`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: userId,
-          firstName,
-          lastName,
-          email,
-          phone,
-          age,
-          occupation,
-          // Safely null out the rest of the database columns so it doesn't crash
-          sex: null, dob: null, blood_type: null, allergies: null, insurance: null, policy_number: null 
-        })
-      });
-
+      // 1. Wait for the image upload to finish FIRST if there is a new image
       if (imageFile) {
         let formData = new FormData();
         formData.append('userId', userId);
@@ -139,6 +144,24 @@ export default function EditProfileScreen({ navigation }) {
           body: formData,
         });
       }
+
+      // 2. Then update the rest of the profile data
+      const updateResponse = await fetch(`${API_BASE_URL}/api/update-profile`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: userId,
+          firstName,
+          lastName,
+          email,
+          phone,
+          age,
+          occupation,
+          dob,
+          address,
+          sex: null, blood_type: null, allergies: null, insurance: null, policy_number: null 
+        })
+      });
 
       if (updateResponse.ok) {
         Alert.alert("Success", "Profile updated successfully!");
@@ -189,13 +212,19 @@ export default function EditProfileScreen({ navigation }) {
         <Input value={lastName} setValue={setLastName} icon="person-outline" max={50} />
         {errors.lastName && <Error text={errors.lastName} />}
 
-        <Label text="Age" />
-        <Input value={age} setValue={setAge} icon="calendar-outline" keyboard="numeric" max={3} />
-        {errors.age && <Error text={errors.age} />}
+        <Label text="Birthdate (YYYY-MM-DD)" />
+        <Input value={dob} setValue={handleDobChange} icon="calendar-outline" max={10} />
+        {errors.dob && <Error text={errors.dob} />}
 
-        <Label text="Occupation" />
+        <Label text="Age" />
+        <Input value={age} setValue={setAge} icon="calculator-outline" editable={false} style={styles.disabledInput} />
+
+        <Label text="Address" />
+        <Input value={address} setValue={setAddress} icon="location-outline" max={100} />
+        {errors.address && <Error text={errors.address} />}
+
+        <Label text="Occupation (Optional)" />
         <Input value={occupation} setValue={setOccupation} icon="briefcase-outline" max={50} />
-        {errors.occupation && <Error text={errors.occupation} />}
 
         <Label text="Contact No" />
         <Input value={phone} setValue={setPhone} icon="call-outline" keyboard="phone-pad" max={11} />

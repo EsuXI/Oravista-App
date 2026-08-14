@@ -24,7 +24,8 @@ export default function AccountInformationScreen({ navigation }) {
           if (response.ok) {
             setPatient(data);
             if (data.profile_picture) {
-              setProfilePic(`${API_BASE_URL}/${data.profile_picture}`);
+              // FIX: Added timestamp to force image cache reload
+              setProfilePic(`${API_BASE_URL}/${data.profile_picture}?t=${new Date().getTime()}`);
             }
           }
         } catch (error) {
@@ -73,8 +74,10 @@ export default function AccountInformationScreen({ navigation }) {
           <Text style={styles.sectionTitle}>Personal Information</Text>
           <InfoRow label="First Name" value={patient?.first_name} icon="person-outline" />
           <InfoRow label="Last Name" value={patient?.last_name} icon="person-outline" />
-          <InfoRow label="Age" value={patient?.age ? `${patient.age} yrs old` : "Not set"} icon="calendar-outline" />
+          <InfoRow label="Birthdate" value={patient?.dob || "Not set"} icon="calendar-outline" />
+          <InfoRow label="Age" value={patient?.age ? `${patient.age} yrs old` : "Not set"} icon="calculator-outline" />
           <InfoRow label="Contact No" value={patient?.phone || "Not set"} icon="call-outline" />
+          <InfoRow label="Address" value={patient?.address || "Not set"} icon="location-outline" />
           <InfoRow label="Occupation" value={patient?.occupation || "Not set"} icon="briefcase-outline" />
         </View>
       </ScrollView>

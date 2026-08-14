@@ -211,17 +211,58 @@ app.post('/api/register', async (req, res) => {
         res.status(500).json({ message: "Server error during registration." });
     }
 });
+// ---------------------------------------------------------
+// PROFILE PICTURE UPLOAD ROUTE
+// ---------------------------------------------------------
+app.post('/api/upload-profile-picture', upload.single('profileImage'), async (req, res) => {
+    const { userId } = req.body;
+    
+    if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+    }
+
+    const filePath = `uploads/${req.file.filename}`;
+
+    try {
+
+        const { error } = await supabase
+            .from('users')
+            .update({ profile_picture: filePath })
+            .eq('id', userId);
+            
+        if (error) throw error;
+        
+        res.status(200).json({ message: "Profile picture uploaded successfully!", filePath });
+    } catch (err) {
+        console.error("Upload Error:", err);
+        res.status(500).json({ message: "Database update failed." });
+    }
+});
 
 app.put('/api/update-profile', async (req, res) => {
-    const { id, firstName, lastName, email, sex, dob, age, phone, occupation, blood_type, allergies, insurance, policy_number } = req.body;
+    const { id, firstName, lastName, email, sex, dob, age, phone, occupation, address, blood_type, allergies, insurance, policy_number } = req.body;
     try {
         const { error } = await supabase.from('users').update({
-            first_name: firstName, last_name: lastName, email, sex, dob, age, phone, occupation, blood_type, allergies, insurance, policy_number
+            first_name: firstName, 
+            last_name: lastName, 
+            email, 
+            sex, 
+            dob, 
+            age, 
+            phone, 
+            occupation, 
+            address,
+            blood_type,
+            allergies, 
+            insurance, 
+            policy_number
         }).eq('id', id);
         
         if (error) throw error;
         res.status(200).json({ message: "Profile updated!" });
-    } catch (err) { res.status(500).json({ message: "Failed update." }); }
+    } catch (err) { 
+        res.status(500).json({ message: "Failed update." }); 
+    }
 });
 
 app.get('/api/user-billings/:userId', async (req, res) => {

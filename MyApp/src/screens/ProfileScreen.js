@@ -5,7 +5,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { fonts } from "../theme/fonts";
 import ScreenHeader from "../components/ScreenHeader";
-import { API_BASE_URL } from '../config/config'; // 🔹 ADDED API URL
+import { API_BASE_URL } from '../config/config'; 
 
 export default function ProfileScreen({ navigation }) {
   const [patient, setPatient] = useState(null);
@@ -23,9 +23,9 @@ export default function ProfileScreen({ navigation }) {
 
           if (response.ok) {
             setPatient(data);
-            // If they have a profile picture in the DB, show it using the server URL
             if (data.profile_picture) {
-              setProfilePic(`${API_BASE_URL}/${data.profile_picture}`);
+              // FIX: Added a timestamp to force the app to reload the image
+              setProfilePic(`${API_BASE_URL}/${data.profile_picture}?t=${new Date().getTime()}`);
             }
           }
         } catch (error) {
@@ -92,6 +92,12 @@ export default function ProfileScreen({ navigation }) {
             label="Account Information"
             onPress={() => navigation.navigate("AccountInformation")}
           />
+          {/* FIX: Added Appointment History */}
+          <MenuItem
+            icon="time-outline"
+            label="Appointment History"
+            onPress={() => navigation.navigate("Appointments")} 
+          />
           <MenuItem
             icon="card-outline"
             label="Billings"
@@ -128,21 +134,8 @@ function MenuItem({ icon, label, onPress }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F9FAFB" },
   scrollContent: { paddingBottom: 40 },
-
   profileCard: {
-    alignItems: "center",
-    marginTop: 20,
-    backgroundColor: "#FFFFFF",
-    marginHorizontal: 20,
-    borderRadius: 24,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
+    alignItems: "center", marginTop: 20, backgroundColor: "#FFFFFF", marginHorizontal: 20, borderRadius: 24, padding: 24, borderWidth: 1, borderColor: "#E5E7EB", elevation: 2, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
   },
   avatarContainer: {
     width: 100, height: 100, borderRadius: 50, backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center", borderWidth: 3, borderColor: "#E5E7EB", overflow: "hidden", marginBottom: 12,
@@ -150,7 +143,6 @@ const styles = StyleSheet.create({
   avatarImage: { width: "100%", height: "100%", resizeMode: "cover" },
   name: { color: "#111827", fontSize: 20, fontFamily: fonts.bold },
   email: { color: "#6B7280", marginTop: 4, fontFamily: fonts.medium },
-
   menuSection: { marginTop: 24, paddingHorizontal: 20 },
   menuItem: {
     flexDirection: "row", alignItems: "center", backgroundColor: "#FFFFFF", padding: 16, borderRadius: 18, marginBottom: 12, borderWidth: 1, borderColor: "#F3F4F6",
@@ -159,7 +151,6 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 14, backgroundColor: "#E0E7FF", justifyContent: "center", alignItems: "center", marginRight: 14,
   },
   menuLabel: { flex: 1, fontSize: 15, fontFamily: fonts.medium, color: "#374151" },
-
   logoutBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 20, height: 58, marginHorizontal: 20, borderRadius: 999, backgroundColor: "#FEE2E2", borderWidth: 1, borderColor: "#FCA5A5",
   },
