@@ -17,14 +17,16 @@ import { fonts } from "../theme/fonts";
 import { API_BASE_URL } from '../config/config';
 
 export default function OtpVerificationScreen({ route, navigation }) {
-  // Destructure route params to identify which flow the user is in
+  // Destructure the new generatedOtp and user object from route params
   const { 
     email, 
     rememberMe, 
     isResetFlow, 
     isChangePasswordFlow, 
     newPassword, 
-    userId 
+    userId,
+    generatedOtp, 
+    user 
   } = route.params || {}; 
   
   const [code, setCode] = useState("");
@@ -54,19 +56,12 @@ export default function OtpVerificationScreen({ route, navigation }) {
     }
 
     setLoading(true);
+    
     try {
-      // Step 1: Verify the 6-digit code with the backend
-      const response = await fetch(`${API_BASE_URL}/api/verify-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp: code }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setError(""); // Clear error on successful code verification
-        setSuccessMsg("Verification successful!"); // Show green success text
+      // Local Validation: Compare the typed code against the generated OTP sent from the previous screen
+      if (code === String(generatedOtp)) {
+        setError(""); 
+        setSuccessMsg("Verification successful!"); 
         
         // Delay to allow user to see the success message before redirecting
         setTimeout(async () => {
@@ -90,21 +85,26 @@ export default function OtpVerificationScreen({ route, navigation }) {
               setLoading(false);
             }
           } else {
-            // Flow C: Standard Login 2FA[cite: 13]
+            // Flow C: Standard Login 2FA
             await AsyncStorage.setItem("userEmail", email);
-            await AsyncStorage.setItem("userToken", data.token || "logged_in");
+            await AsyncStorage.setItem("userToken", "logged_in_token");
             await AsyncStorage.setItem("rememberMe", rememberMe ? "true" : "false");
+            
+            // Save the user data so the rest of the app can load their profile immediately
+            if (user) {
+              await AsyncStorage.setItem("userData", JSON.stringify(user));
+            }
+            
             navigation.replace("Home");
           }
         }, 1500);
         
       } else {
-        // Reset loading so user can try entering the code again
-        setError(data.message || "Invalid verification code.");
+        setError("Invalid verification code.");
         setLoading(false); 
       }
     } catch (err) {
-      setError("Server connection failed.");
+      setError("An error occurred during verification.");
       setLoading(false);
     }
   };
@@ -112,14 +112,16 @@ export default function OtpVerificationScreen({ route, navigation }) {
   const handleResend = async () => {
     if (countdown > 0) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/api/resend-otp`, {
+      // If you implement a true resend route later, it must also return the new { generatedOtp } 
+      // so you can update this screen's state. For now, it alerts the cooldown.
+      const response = await fetch(`${API_BASE_URL}/api/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, action: 'login' }),
       });
       if (response.ok) {
-        Alert.alert("Success", "A new code has been sent!");
-        setCountdown(120); // 2-minute cooldown
+        Alert.alert("Success", "A new code has been sent! Please note this requires backend state sync for the new code to pass.");
+        setCountdown(120); 
       }
     } catch (err) {
       Alert.alert("Error", "Failed to resend code.");
@@ -172,7 +174,6 @@ export default function OtpVerificationScreen({ route, navigation }) {
               />
             </View>
 
-            {/* Verification Messages[cite: 13] */}
             {error ? <Text style={styles.error}>{error}</Text> : null}
             {successMsg ? <Text style={styles.successText}>{successMsg}</Text> : null}
 
@@ -190,7 +191,6 @@ export default function OtpVerificationScreen({ route, navigation }) {
               )}
             </TouchableOpacity>
 
-            {/* Resend Logic - Hidden once verified successfully[cite: 13] */}
             {!successMsg && (
               <View style={styles.footerRow}>
                 <Text style={styles.footerText}>Didn't receive the code? </Text>

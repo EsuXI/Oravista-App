@@ -29,7 +29,7 @@ export default function EditProfileScreen({ navigation }) {
   const [dob, setDob] = useState(""); 
   const [age, setAge] = useState("");
   const [occupation, setOccupation] = useState("");
-  const [address, setAddress] = useState(""); 
+  // Address removed as it does not exist in the DB schema
   
   const [profilePic, setProfilePic] = useState(null); 
   const [imageFile, setImageFile] = useState(null); 
@@ -51,7 +51,6 @@ export default function EditProfileScreen({ navigation }) {
           setDob(data.dob || ""); 
           setAge(data.age ? data.age.toString() : "");
           setOccupation(data.occupation || ""); 
-          setAddress(data.address || ""); 
           
           if (data.profile_picture) {
             setProfilePic(data.profile_picture.startsWith('http') ? data.profile_picture : `${API_BASE_URL}/${data.profile_picture}?t=${new Date().getTime()}`);
@@ -113,7 +112,6 @@ export default function EditProfileScreen({ navigation }) {
     else if (!/^09[0-9]{9}$/.test(phone)) newErrors.phone = "Must be an 11-digit number starting with 09";
     
     if (!dob.trim()) newErrors.dob = "Required (Format: YYYY-MM-DD)";
-    if (!address.trim()) newErrors.address = "Required";
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -124,24 +122,19 @@ export default function EditProfileScreen({ navigation }) {
     setSaving(true);
 
     try {
-      // 1. Image Upload with proper error catching
+      // 1. Image Upload sending URL instead of FormData
       if (imageFile) {
-        let formData = new FormData();
-        formData.append('userId', userId);
-        formData.append('profileImage', {
-          uri: imageFile.uri,
-          type: 'image/jpeg',
-          name: 'profile.jpg',
+        const imageResponse = await fetch(`${API_BASE_URL}/api/update-profile-picture`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: userId,
+            imageUrl: imageFile.uri 
+          })
         });
 
-        const imageResponse = await fetch(`${API_BASE_URL}/api/upload-profile-picture`, {
-          method: 'POST',
-          body: formData,
-        });
-
-        // FIX: If the image fails to upload, stop the function and warn the user!
         if (!imageResponse.ok) {
-           Alert.alert("Error", "Failed to upload profile picture. Check database permissions.");
+           Alert.alert("Error", "Failed to update profile picture.");
            setSaving(false);
            return; 
         }
@@ -160,7 +153,6 @@ export default function EditProfileScreen({ navigation }) {
           age,
           occupation,
           dob,
-          address,
           sex: null, blood_type: null, allergies: null, insurance: null, policy_number: null 
         })
       });
@@ -220,10 +212,6 @@ export default function EditProfileScreen({ navigation }) {
 
         <Label text="Age" />
         <Input value={age} setValue={setAge} icon="calculator-outline" editable={false} style={styles.disabledInput} />
-
-        <Label text="Address" />
-        <Input value={address} setValue={setAddress} icon="location-outline" max={100} />
-        {errors.address && <Error text={errors.address} />}
 
         <Label text="Occupation (Optional)" />
         <Input value={occupation} setValue={setOccupation} icon="briefcase-outline" max={50} />

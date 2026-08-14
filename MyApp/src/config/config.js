@@ -4,8 +4,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
  * 🚨 ORAVISTA API CONFIGURATION 🚨
  * Mobile App Backend Connection
  */
-// ✅ FIXED: Removed the "/api" at the end so it doesn't double up in your screens!
-export const API_BASE_URL = "https://oravista-app.vercel.app"; 
+// ✅ FIXED: Pointing to the local backend for testing. 
+// REPLACE 192.168.1.X WITH YOUR ACTUAL IPV4 ADDRESS!
+export const API_BASE_URL = "http://10.30.57.42:5001";
 
 /**
  * 🔹 Helper Function: Get Authorized Headers

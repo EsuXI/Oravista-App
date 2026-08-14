@@ -13,7 +13,7 @@ import {
   Alert
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage"; // 🔹 Added for persistence
+import AsyncStorage from "@react-native-async-storage/async-storage"; 
 import { fonts } from "../theme/fonts";
 import { API_BASE_URL } from '../config/config';
 
@@ -27,7 +27,6 @@ export default function LoginScreen({ navigation }) {
   const [emailError, setEmailError] = useState("");
   const [passwordError, setPasswordError] = useState("");
 
-  // 🚀 1. Load saved email if "Remember me" was previously checked
   useEffect(() => {
     const loadSavedEmail = async () => {
       try {
@@ -74,16 +73,18 @@ export default function LoginScreen({ navigation }) {
       const data = await response.json();
 
       if (response.ok) {
-        // 🚀 2. Handle the "Remember Me" logic before navigating
         if (remember) {
           await AsyncStorage.setItem("rememberedEmail", email.trim().toLowerCase());
         } else {
           await AsyncStorage.removeItem("rememberedEmail");
         }
 
+        // Navigate and pass the OTP and User payload directly to the OtpVerification screen
         navigation.navigate("OtpVerification", { 
           email: email.trim().toLowerCase(), 
-          rememberMe: remember 
+          rememberMe: remember,
+          generatedOtp: data.generatedOtp, 
+          user: data.user 
         });
       } else {
         setPasswordError(data.message || "Invalid email or password.");
@@ -159,10 +160,9 @@ export default function LoginScreen({ navigation }) {
               <TouchableOpacity 
                 style={styles.rememberRow} 
                 onPress={() => {
-                  const nextState = !remember; // Figure out if we are checking or unchecking
-                  setRemember(nextState);      // Update the UI
+                  const nextState = !remember; 
+                  setRemember(nextState);      
                   
-                  // 🚀 THE FIX: If they just unchecked the box, instantly wipe the memory!
                   if (!nextState) {
                     AsyncStorage.removeItem("rememberedEmail");
                   }

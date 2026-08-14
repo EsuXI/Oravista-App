@@ -44,7 +44,6 @@ export default function BillingsScreen({ navigation }) {
       }
     } catch (error) {
       console.error("Failed to fetch billings", error);
-      // Fallback to empty if the server is offline, no more dummy data!
       setBillings([]);
       setOutstanding(0);
     } finally {
@@ -61,9 +60,11 @@ export default function BillingsScreen({ navigation }) {
   const filteredBillings = billings.filter((bill) => {
     const matchesStatus = activeStatus === "All" || bill.status === activeStatus;
     const searchLower = searchQuery.toLowerCase();
+    
+    // Added safety fallbacks to prevent crashes if DB columns are null
     const matchesSearch = 
-      bill.id.toString().toLowerCase().includes(searchLower) ||
-      bill.title.toLowerCase().includes(searchLower);
+      (bill.id || "").toString().toLowerCase().includes(searchLower) ||
+      (bill.title || "").toLowerCase().includes(searchLower);
 
     return matchesStatus && matchesSearch;
   });
@@ -74,7 +75,6 @@ export default function BillingsScreen({ navigation }) {
       return;
     }
     
-    // Check if the path is already a full web link. If not, attach the API base URL.
     const fileUrl = path.startsWith('http') ? path : `${API_BASE_URL}/${path}`;
     
     Linking.openURL(fileUrl).catch(() => {
@@ -90,7 +90,7 @@ export default function BillingsScreen({ navigation }) {
         <View style={styles.balanceInfo}>
           <Text style={styles.balanceLabel}>Outstanding Balance</Text>
           <Text style={styles.balanceAmount}>
-            ₱{parseFloat(outstanding).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            ₱{parseFloat(outstanding || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
           </Text>
         </View>
         <View style={styles.balanceIconContainer}>
@@ -141,28 +141,28 @@ export default function BillingsScreen({ navigation }) {
               <TouchableOpacity
                 key={bill.id}
                 style={styles.card}
-                onPress={() => Alert.alert("Invoice Details", `Invoice: INV-${bill.id.toString().padStart(3, '0')}\nTreatment: ${bill.title}`)}
+                onPress={() => Alert.alert("Invoice Details", `Invoice: INV-${(bill.id || 0).toString().padStart(3, '0')}\nTreatment: ${bill.title || 'N/A'}`)}
                 activeOpacity={0.7}
               >
                 <View style={styles.cardTop}>
                   <View style={styles.idBox}>
-                    <Text style={styles.invoice}>INV-{bill.id.toString().padStart(3, '0')}</Text>
+                    <Text style={styles.invoice}>INV-{(bill.id || 0).toString().padStart(3, '0')}</Text>
                   </View>
                   <TouchableOpacity style={styles.downloadBtn} onPress={() => handleDownload(bill.invoice_path)}>
                     <Ionicons name="download-outline" size={16} color="#001166" />
                   </TouchableOpacity>
                 </View>
 
-                <Text style={styles.title}>{bill.title}</Text>
+                <Text style={styles.title}>{bill.title || "Pending Service"}</Text>
                 <Text style={styles.date}>{bill.date}</Text>
 
                 <View style={styles.cardBottom}>
                   <Text style={styles.amount}>
-                    ₱{parseFloat(bill.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    ₱{parseFloat(bill.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </Text>
                   <View style={[styles.statusBadge, bill.status === "Paid" ? styles.paidBg : styles.pendingBg]}>
                     <Text style={[styles.statusText, bill.status === "Paid" ? styles.paidText : styles.pendingText]}>
-                      {bill.status}
+                      {bill.status || "Pending"}
                     </Text>
                   </View>
                 </View>
