@@ -67,7 +67,6 @@ export default function EditProfileScreen({ navigation }) {
     loadProfile();
   }, []);
 
-  // Helper to auto-calculate age
   const handleDobChange = (text) => {
     setDob(text);
     if (text.length === 10) { 
@@ -116,8 +115,6 @@ export default function EditProfileScreen({ navigation }) {
     if (!dob.trim()) newErrors.dob = "Required (Format: YYYY-MM-DD)";
     if (!address.trim()) newErrors.address = "Required";
 
-    // Notice Occupation is missing here, making it optional
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -127,7 +124,7 @@ export default function EditProfileScreen({ navigation }) {
     setSaving(true);
 
     try {
-      // 1. Wait for the image upload to finish FIRST if there is a new image
+      // 1. Image Upload with proper error catching
       if (imageFile) {
         let formData = new FormData();
         formData.append('userId', userId);
@@ -137,13 +134,20 @@ export default function EditProfileScreen({ navigation }) {
           name: 'profile.jpg',
         });
 
-        await fetch(`${API_BASE_URL}/api/upload-profile-picture`, {
+        const imageResponse = await fetch(`${API_BASE_URL}/api/upload-profile-picture`, {
           method: 'POST',
           body: formData,
         });
+
+        // FIX: If the image fails to upload, stop the function and warn the user!
+        if (!imageResponse.ok) {
+           Alert.alert("Error", "Failed to upload profile picture. Check database permissions.");
+           setSaving(false);
+           return; 
+        }
       }
 
-      // 2. Then update the rest of the profile data
+      // 2. Profile Data Update
       const updateResponse = await fetch(`${API_BASE_URL}/api/update-profile`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -165,7 +169,7 @@ export default function EditProfileScreen({ navigation }) {
         Alert.alert("Success", "Profile updated successfully!");
         navigation.goBack();
       } else {
-        Alert.alert("Error", "Failed to update profile.");
+        Alert.alert("Error", "Failed to update profile text details.");
       }
     } catch (error) {
       console.error(error);
