@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -18,12 +18,16 @@ import { API_BASE_URL } from '../config/config';
 import ScreenHeader from "../components/ScreenHeader";
 
 const FILTERS = ["All", "Confirmed", "Pending", "Completed", "Cancelled"];
+const ITEMS_PER_PAGE = 5;
 
 export default function AppointmentsScreen({ navigation }) {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("All");
+  
+  // FIX: Added pagination state
+  const [page, setPage] = useState(1);
 
   const fetchAppointments = async () => {
     setLoading(true);
@@ -44,22 +48,40 @@ export default function AppointmentsScreen({ navigation }) {
     }
   };
 
-  // Automatically refresh data every time you view this screen
   useFocusEffect(
     useCallback(() => {
       fetchAppointments();
     }, [])
   );
 
-  // Filter based on the search box and the category chips
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, activeFilter]);
+
   const filteredData = appointments.filter((item) => {
     const matchesFilter = activeFilter === "All" || item.status === activeFilter;
+    
+    const formattedDate = new Date(item.appointment_date).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+    const searchLower = searchQuery.toLowerCase();
+
     const matchesSearch = 
-      item.dentist_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.service_type?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.booking_ref?.toLowerCase().includes(searchQuery.toLowerCase());
+      item.dentist_name?.toLowerCase().includes(searchLower) ||
+      item.service_type?.toLowerCase().includes(searchLower) ||
+      item.booking_ref?.toLowerCase().includes(searchLower) ||
+      item.appointment_time?.toLowerCase().includes(searchLower) ||
+      item.appointment_date?.toLowerCase().includes(searchLower) ||
+      formattedDate.toLowerCase().includes(searchLower);
+
     return matchesFilter && matchesSearch;
   });
+
+  const displayedData = filteredData.slice(0, page * ITEMS_PER_PAGE);
+
+  const loadMoreData = () => {
+    if (displayedData.length < filteredData.length) {
+      setPage(prevPage => prevPage + 1);
+    }
+  };
 
   const cancelAppointment = (id) => {
     Alert.alert("Cancel Appointment", "Are you sure you want to cancel this booking?", [
@@ -75,7 +97,7 @@ export default function AppointmentsScreen({ navigation }) {
             });
 
             if (response.ok) {
-              fetchAppointments(); // Refresh the list from the database
+              fetchAppointments(); 
             } else {
               Alert.alert("Error", "Could not cancel appointment.");
             }
@@ -88,7 +110,6 @@ export default function AppointmentsScreen({ navigation }) {
   };
 
   const renderItem = ({ item }) => {
-    // Format the date to look clean
     const formattedDate = new Date(item.appointment_date).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
 
     return (
@@ -123,6 +144,22 @@ export default function AppointmentsScreen({ navigation }) {
             <Text style={styles.cancelText}>Cancel Appointment</Text>
           </TouchableOpacity>
         )}
+
+        {/* FIX: Added Reschedule button for Cancelled appointments */}
+        {item.status === "Cancelled" && (
+          <TouchableOpacity onPress={() => navigation.navigate("Booking")} style={styles.rescheduleBtn}>
+            <Text style={styles.rescheduleText}>Reschedule Appointment</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
+  const renderFooter = () => {
+    if (displayedData.length >= filteredData.length) return null;
+    return (
+      <View style={{ paddingVertical: 20 }}>
+        <ActivityIndicator size="small" color="#001166" />
       </View>
     );
   };
@@ -134,7 +171,7 @@ export default function AppointmentsScreen({ navigation }) {
       <View style={styles.searchBar}>
         <Ionicons name="search-outline" size={18} color="#9CA3AF" />
         <TextInput
-          placeholder="Search dentist or service..."
+          placeholder="Search date, time, dentist..."
           style={styles.searchInput}
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -155,17 +192,20 @@ export default function AppointmentsScreen({ navigation }) {
         </ScrollView>
       </View>
 
-      {loading ? (
+      {loading && page === 1 ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#001166" />
         </View>
       ) : (
         <FlatList
-          data={filteredData}
+          data={displayedData}
           keyExtractor={(item) => item.id.toString()}
           renderItem={renderItem}
           contentContainerStyle={{ padding: 16, paddingBottom: 120 }}
           ListEmptyComponent={<Text style={styles.empty}>No appointments found.</Text>}
+          onEndReached={loadMoreData}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={renderFooter}
         />
       )}
 
@@ -204,6 +244,8 @@ const styles = StyleSheet.create({
   infoText: { fontSize: 13, color: "#4B5563", fontFamily: fonts.medium },
   cancelBtn: { marginTop: 16, backgroundColor: "#FFFFFF", padding: 12, borderRadius: 14, alignItems: "center", borderWidth: 1, borderColor: "#FCA5A5" },
   cancelText: { color: "#DC2626", fontFamily: fonts.bold, fontSize: 13 },
+  rescheduleBtn: { marginTop: 16, backgroundColor: "#F5F8FF", padding: 12, borderRadius: 14, alignItems: "center", borderWidth: 1, borderColor: "#001166" },
+  rescheduleText: { color: "#001166", fontFamily: fonts.bold, fontSize: 13 },
   bookBtn: { position: "absolute", bottom: 20, left: 20, right: 20, backgroundColor: "#001166", padding: 18, borderRadius: 999, alignItems: "center", elevation: 5 },
   bookText: { color: "#FFFFFF", fontFamily: fonts.bold, fontSize: 16 },
   empty: { textAlign: "center", marginTop: 40, color: "#9CA3AF", fontFamily: fonts.medium }
