@@ -160,11 +160,17 @@ export default function AppointmentsScreen({ navigation }) {
   };
 
   const renderFooter = () => {
+    // If all items are showing, don't show the button
     if (displayedData.length >= filteredData.length) return null;
+    
     return (
-      <View style={{ paddingVertical: 20 }}>
-        <ActivityIndicator size="small" color="#001166" />
-      </View>
+      <TouchableOpacity 
+        style={styles.loadMoreBtn} 
+        onPress={loadMoreData}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.loadMoreText}>Load More</Text>
+      </TouchableOpacity>
     );
   };
 
@@ -207,8 +213,6 @@ export default function AppointmentsScreen({ navigation }) {
           renderItem={renderItem}
           contentContainerStyle={{ padding: 16, paddingBottom: 120 }}
           ListEmptyComponent={<Text style={styles.empty}>No appointments found.</Text>}
-          onEndReached={loadMoreData}
-          onEndReachedThreshold={0.5}
           ListFooterComponent={renderFooter}
         />
       )}
@@ -252,5 +256,20 @@ const styles = StyleSheet.create({
   rescheduleText: { color: "#001166", fontFamily: fonts.bold, fontSize: 13 },
   bookBtn: { position: "absolute", bottom: 20, left: 20, right: 20, backgroundColor: "#001166", padding: 18, borderRadius: 999, alignItems: "center", elevation: 5 },
   bookText: { color: "#FFFFFF", fontFamily: fonts.bold, fontSize: 16 },
-  empty: { textAlign: "center", marginTop: 40, color: "#9CA3AF", fontFamily: fonts.medium }
+  empty: { textAlign: "center", marginTop: 40, color: "#9CA3AF", fontFamily: fonts.medium },
+  loadMoreBtn: { 
+    paddingVertical: 14, 
+    backgroundColor: "#F3F4F6", 
+    borderRadius: 14, 
+    alignItems: "center", 
+    marginTop: 10, 
+    marginBottom: 20,
+    borderWidth: 1, 
+    borderColor: "#E5E7EB" 
+  },
+  loadMoreText: { 
+    color: "#001166", 
+    fontFamily: fonts.semiBold, 
+    fontSize: 14 
+  },
 });
