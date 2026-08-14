@@ -103,7 +103,9 @@ const generateClinicTimes = (selectedServiceDuration, takenTimes, selectedDate) 
   return slots;
 };
 
-export default function BookingScreen({ navigation }) {
+export default function BookingScreen({ route, navigation }) {
+
+  const rescheduleId = route?.params?.rescheduleId;
   const [userId, setUserId] = useState(null);
   const [branch, setBranch] = useState(null);
   const [category, setCategory] = useState(null);
@@ -175,6 +177,15 @@ export default function BookingScreen({ navigation }) {
               })
             });
             if (response.ok) {
+              // FIX: If this was a reschedule, change the old appointment's status!
+              if (rescheduleId) {
+                await fetch(`${API_BASE_URL}/api/update-appointment-status`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ appointment_id: rescheduleId, status: 'Rescheduled' })
+                });
+              }
+              
               Alert.alert("Success!", "Appointment booked successfully.");
               navigation.goBack();
             }

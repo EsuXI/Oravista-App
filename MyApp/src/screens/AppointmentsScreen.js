@@ -151,7 +151,7 @@ export default function AppointmentsScreen({ navigation }) {
         )}
 
         {item.status === "Cancelled" && (
-          <TouchableOpacity onPress={() => navigation.navigate("Booking")} style={styles.rescheduleBtn}>
+          <TouchableOpacity onPress={() => navigation.navigate("Booking", { rescheduleId: item.id })} style={styles.rescheduleBtn}>
             <Text style={styles.rescheduleText}>Reschedule Appointment</Text>
           </TouchableOpacity>
         )}

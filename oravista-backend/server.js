@@ -212,27 +212,36 @@ app.post('/api/register', async (req, res) => {
     }
 });
 // ---------------------------------------------------------
-// PROFILE PICTURE UPLOAD ROUTE
+// PROFILE PICTURE UPLOAD ROUTE (SUPABASE FIX)
 // ---------------------------------------------------------
-app.post('/api/upload-profile-picture', upload.single('profileImage'), async (req, res) => {
+const memoryStorage = multer.memoryStorage();
+const memoryUpload = multer({ storage: memoryStorage });
+
+app.post('/api/upload-profile-picture', memoryUpload.single('profileImage'), async (req, res) => {
     const { userId } = req.body;
     
     if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
     }
 
-    const filePath = `uploads/${req.file.filename}`;
+    const fileName = `profile_${userId}_${Date.now()}.jpg`;
 
     try {
-
-        const { error } = await supabase
-            .from('users')
-            .update({ profile_picture: filePath })
-            .eq('id', userId);
+        // Upload directly to the Supabase 'avatars' bucket
+        const { error } = await supabase.storage
+            .from('avatars')
+            .upload(fileName, req.file.buffer, { contentType: req.file.mimetype, upsert: true });
             
         if (error) throw error;
         
-        res.status(200).json({ message: "Profile picture uploaded successfully!", filePath });
+        // Get the public URL for the mobile app to display
+        const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
+        const publicUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+
+        // Save that permanent URL into the user's profile
+        await supabase.from('users').update({ profile_picture: publicUrl }).eq('id', userId);
+        
+        res.status(200).json({ message: "Uploaded successfully!", filePath: publicUrl });
     } catch (err) {
         console.error("Upload Error:", err);
         res.status(500).json({ message: "Database update failed." });

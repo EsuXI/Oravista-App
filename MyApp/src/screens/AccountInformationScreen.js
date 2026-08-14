@@ -24,8 +24,7 @@ export default function AccountInformationScreen({ navigation }) {
           if (response.ok) {
             setPatient(data);
             if (data.profile_picture) {
-              // FIX: Added timestamp to force image cache reload
-              setProfilePic(`${API_BASE_URL}/${data.profile_picture}?t=${new Date().getTime()}`);
+              setProfilePic(data.profile_picture.startsWith('http') ? data.profile_picture : `${API_BASE_URL}/${data.profile_picture}?t=${new Date().getTime()}`);
             }
           }
         } catch (error) {
