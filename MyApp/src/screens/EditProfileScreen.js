@@ -139,7 +139,6 @@ export default function EditProfileScreen({ navigation }) {
 
         await fetch(`${API_BASE_URL}/api/upload-profile-picture`, {
           method: 'POST',
-          headers: { 'Content-Type': 'multipart/form-data' },
           body: formData,
         });
       }
