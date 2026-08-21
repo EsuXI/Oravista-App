@@ -6,7 +6,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
  */
 // ✅ FIXED: Pointing to the local backend for testing. 
 // REPLACE 192.168.1.X WITH YOUR ACTUAL IPV4 ADDRESS!
-export const API_BASE_URL = "https://oravistabackend-41ynas4n0-lagdadenkyruss-7820s-projects.vercel.app";
+export const API_BASE_URL = "https://oravistabackend.vercel.app";
 
 /**
  * 🔹 Helper Function: Get Authorized Headers
