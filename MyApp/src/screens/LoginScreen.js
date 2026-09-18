@@ -10,12 +10,12 @@ import {
   ActivityIndicator,
   ScrollView,
   Image,
-  Alert
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage"; 
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { fonts } from "../theme/fonts";
-import { API_BASE_URL } from '../config/config';
+import { API_BASE_URL } from "../config/config";
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState("");
@@ -44,7 +44,7 @@ export default function LoginScreen({ navigation }) {
 
   const handleLogin = async () => {
     if (loading) return;
-    
+
     setEmailError("");
     setPasswordError("");
 
@@ -57,16 +57,18 @@ export default function LoginScreen({ navigation }) {
       setPasswordError("Password is required.");
       return;
     }
-    
+
     setLoading(true);
+    const cleanEmail = email.trim().toLowerCase();
 
     try {
+      // 1. Verify credentials against backend
       const response = await fetch(`${API_BASE_URL}/api/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          email: email.trim().toLowerCase(), 
-          password: password 
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: cleanEmail,
+          password: password,
         }),
       });
 
@@ -80,31 +82,51 @@ export default function LoginScreen({ navigation }) {
         return;
       }
 
-      if (response.ok) {
-        // server.js sends the OTP directly inside the login response
-        console.log("🔥 YOUR SECRET OTP IS:", data.generatedOtp);
-
-        if (remember) {
-          await AsyncStorage.setItem("rememberedEmail", email.trim().toLowerCase());
-        } else {
-          await AsyncStorage.removeItem("rememberedEmail");
-        }
-
-        navigation.navigate("OtpVerification", { 
-          email: email.trim().toLowerCase(), 
-          rememberMe: remember,
-          generatedOtp: data.generatedOtp, 
-          user: data.user 
-        });
-      } else {
+      if (!response.ok) {
         setPasswordError(data.message || "Invalid email or password.");
+        setLoading(false);
+        return;
       }
 
+      // 2. Trigger 6-digit verification code
+      let generatedOtp = "";
+      try {
+        const otpRes = await fetch(`${API_BASE_URL}/api/send-otp`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: cleanEmail,
+            action: "login",
+          }),
+        });
+        const otpData = await otpRes.json();
+        if (otpRes.ok && otpData.generatedOtp) {
+          generatedOtp = String(otpData.generatedOtp);
+        }
+      } catch (otpErr) {
+        console.log("OTP trigger warning:", otpErr);
+      }
+
+      // 3. Persist remember flags for AuthGate
+      if (remember) {
+        await AsyncStorage.setItem("rememberMe", "true");
+        await AsyncStorage.setItem("rememberedEmail", cleanEmail);
+      } else {
+        await AsyncStorage.removeItem("rememberMe");
+        await AsyncStorage.removeItem("rememberedEmail");
+      }
+
+      navigation.navigate("OtpVerification", {
+        email: cleanEmail,
+        rememberMe: remember,
+        generatedOtp: generatedOtp,
+        user: data.user,
+      });
     } catch (error) {
       console.log("LOGIN ERROR:", error);
       Alert.alert(
-        "Connection Error", 
-        "Make sure your server is running and reachable."
+        "Connection Error",
+        "Cannot reach the clinic server. Please check your internet connection."
       );
     } finally {
       setLoading(false);
@@ -113,23 +135,23 @@ export default function LoginScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === "ios" ? "padding" : "height"} 
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
       >
         <View style={styles.premiumHeader}>
           <View style={styles.logoBox}>
-            <Image 
-              source={require('../../assets/oravista_logo.png')} 
-              style={styles.headerLogo} 
+            <Image
+              source={require("../../assets/oravista_logo.png")}
+              style={styles.headerLogo}
             />
           </View>
           <Text style={styles.welcomeText}>Welcome Back</Text>
           <Text style={styles.subHeaderText}>Sign in to continue</Text>
         </View>
 
-        <ScrollView 
-          showsVerticalScrollIndicator={false} 
+        <ScrollView
+          showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
@@ -161,19 +183,24 @@ export default function LoginScreen({ navigation }) {
                 onChangeText={setPassword}
               />
               <TouchableOpacity onPress={() => setPasswordVisible(!passwordVisible)}>
-                <Ionicons name={passwordVisible ? "eye-off-outline" : "eye-outline"} size={20} color="#9CA3AF" />
+                <Ionicons
+                  name={passwordVisible ? "eye-off-outline" : "eye-outline"}
+                  size={20}
+                  color="#9CA3AF"
+                />
               </TouchableOpacity>
             </View>
             {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
 
             <View style={styles.rowBetween}>
-              <TouchableOpacity 
-                style={styles.rememberRow} 
+              <TouchableOpacity
+                style={styles.rememberRow}
                 onPress={() => {
-                  const nextState = !remember; 
-                  setRemember(nextState);      
-                  
+                  const nextState = !remember;
+                  setRemember(nextState);
+
                   if (!nextState) {
+                    AsyncStorage.removeItem("rememberMe");
                     AsyncStorage.removeItem("rememberedEmail");
                   }
                 }}
@@ -188,12 +215,16 @@ export default function LoginScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity 
-              style={[styles.loginBtn, loading && { opacity: 0.7 }]} 
-              onPress={handleLogin} 
+            <TouchableOpacity
+              style={[styles.loginBtn, loading && { opacity: 0.7 }]}
+              onPress={handleLogin}
               disabled={loading}
             >
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.loginBtnText}>Login</Text>}
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.loginBtnText}>Login</Text>
+              )}
             </TouchableOpacity>
 
             <View style={styles.footerRow}>
@@ -224,8 +255,8 @@ const styles = StyleSheet.create({
     height: 110,
     borderRadius: 28,
     backgroundColor: "#FFFFFF",
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 16,
   },
   headerLogo: { width: "85%", height: "85%", resizeMode: "contain" },
@@ -249,7 +280,7 @@ const styles = StyleSheet.create({
   errorText: { color: "#DC2626", fontSize: 12, marginTop: 6, marginBottom: 10, marginLeft: 8, fontFamily: fonts.medium },
   rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 30, marginTop: 10 },
   rememberRow: { flexDirection: "row", alignItems: "center" },
-  checkbox: { width: 20, height: 20, borderWidth: 1.5, borderColor: "#E5E7EB", borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
+  checkbox: { width: 20, height: 20, borderWidth: 1.5, borderColor: "#E5E7EB", borderRadius: 6, alignItems: "center", justifyContent: "center" },
   checkboxActive: { backgroundColor: "#001166", borderColor: "#001166" },
   rememberText: { marginLeft: 10, fontSize: 14, fontFamily: fonts.medium, color: "#4B5563" },
   forgotText: { color: "#001166", fontFamily: fonts.bold, fontSize: 14 },
@@ -263,5 +294,5 @@ const styles = StyleSheet.create({
   loginBtnText: { color: "#fff", fontSize: 16, fontFamily: fonts.bold },
   footerRow: { flexDirection: "row", justifyContent: "center", marginTop: 24 },
   footerText: { color: "#6B7280", fontFamily: fonts.medium },
-  registerLink: { color: "#001166", fontFamily: fonts.bold }
+  registerLink: { color: "#001166", fontFamily: fonts.bold },
 });

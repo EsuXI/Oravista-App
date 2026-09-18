@@ -125,17 +125,9 @@ export default function OtpVerificationScreen({ navigation, route }) {
             message: "Your password has been updated successfully.",
             onPrimaryPress: () => {
               setAlertConfig((prev) => ({ ...prev, visible: false }));
-              // Cleanly resets navigation back to Profile tab
               navigation.reset({
                 index: 0,
-                routes: [
-                  {
-                    name: "Home",
-                    state: {
-                      routes: [{ name: "Profile" }],
-                    },
-                  },
-                ],
+                routes: [{ name: "Home" }],
               });
             },
           });
@@ -161,6 +153,11 @@ export default function OtpVerificationScreen({ navigation, route }) {
         }
       }
 
+      if (route?.params?.rememberMe) {
+        await AsyncStorage.setItem("rememberMe", "true");
+      }
+
+      // Resets into AppNavigator's Stack.Screen name="Home" (MainTabNavigator)
       navigation.reset({
         index: 0,
         routes: [{ name: "Home" }],
@@ -184,16 +181,19 @@ export default function OtpVerificationScreen({ navigation, route }) {
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/forgot-password`, {
+      const response = await fetch(`${API_BASE_URL}/api/send-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, action: isChangePasswordFlow ? "change" : "login" }),
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          action: isChangePasswordFlow ? "change_password" : "login",
+        }),
       });
 
       const data = await response.json();
       if (response.ok) {
         if (data.generatedOtp) {
-          setCurrentOtp(data.generatedOtp);
+          setCurrentOtp(String(data.generatedOtp));
         }
         setResendCooldown(30);
         setAlertConfig({
