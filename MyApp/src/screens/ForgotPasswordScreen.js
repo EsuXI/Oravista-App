@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { fonts } from "../theme/fonts";
-import { API_BASE_URL } from '../config/config';
+import { API_BASE_URL } from "../config/config";
 
 export default function ForgotPasswordScreen({ navigation }) {
   const [email, setEmail] = useState("");
@@ -14,34 +14,54 @@ export default function ForgotPasswordScreen({ navigation }) {
 
   const handleSendCode = async () => {
     setError("");
-    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) {
       setError("Please enter a valid email address");
       return;
     }
 
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/api/forgot-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase() })
+
+      // Trigger OTP email using Cloud Run backend
+      const response = await fetch(`${API_BASE_URL}/api/send-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          email: cleanEmail,
+          action: "forgot_password"
+        })
       });
+
+      const rawText = await response.text();
+      let data = {};
+      try {
+        data = JSON.parse(rawText);
+      } catch (e) {
+        data = {};
+      }
 
       if (response.ok) {
         Alert.alert(
           "Code Sent",
           "Check your email for the 6-digit verification code.",
-          [{ text: "Verify Now", onPress: () => navigation.navigate("OtpVerification", { 
-            email: email.trim().toLowerCase(),
-            isResetFlow: true // 🔹 CRITICAL: Tells OTP screen to go to ResetPassword
-          }) }]
+          [{ 
+            text: "Verify Now", 
+            onPress: () => navigation.navigate("OtpVerification", { 
+              email: cleanEmail,
+              userId: data.userId || (data.user && data.user.id),
+              generatedOtp: data.generatedOtp ? String(data.generatedOtp) : "",
+              isResetFlow: true // Directs to ResetPasswordScreen upon verification
+            }) 
+          }]
         );
       } else {
-        const data = await response.json();
-        setError(data.message || "Email not found.");
+        setError(data.message || "Email not found in our records.");
       }
     } catch (err) {
-      setError("Server connection failed.");
+      console.log("Forgot Password Error:", err);
+      setError("Server connection failed. Please check your network.");
     } finally {
       setLoading(false);
     }
@@ -89,7 +109,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FFFFFF" },
   premiumHeader: { backgroundColor: "#001166", paddingTop: 80, paddingBottom: 40, alignItems: "center", borderBottomLeftRadius: 40, borderBottomRightRadius: 40, elevation: 10, position: "relative" },
   backBtn: { position: "absolute", top: 50, left: 20, padding: 8, zIndex: 10 },
-  iconCircle: { width: 70, height: 70, borderRadius: 22, backgroundColor: "#FFFFFF", alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  iconCircle: { width: 70, height: 70, borderRadius: 22, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", marginBottom: 20 },
   title: { color: "#FFFFFF", fontSize: 24, fontFamily: fonts.bold },
   subtitle: { color: "#C7D2FF", fontSize: 13, fontFamily: fonts.medium, marginTop: 6, textAlign: "center", paddingHorizontal: 40 },
   scrollContent: { paddingBottom: 40 },

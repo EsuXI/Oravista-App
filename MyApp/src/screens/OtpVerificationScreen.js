@@ -19,6 +19,7 @@ export default function OtpVerificationScreen({ navigation, route }) {
   const email = route?.params?.email || "your email";
   const user = route?.params?.user || null;
   const isChangePasswordFlow = route?.params?.isChangePasswordFlow || false;
+  const isResetFlow = route?.params?.isResetFlow || false;
   const newPassword = route?.params?.newPassword || null;
   const initialOtp = route?.params?.generatedOtp || "";
 
@@ -105,18 +106,68 @@ export default function OtpVerificationScreen({ navigation, route }) {
         return;
       }
 
-      // If change password flow
+      // 1. Forgot Password flow -> Proceed to ResetPasswordScreen
+      if (isResetFlow) {
+        setLoading(false);
+        navigation.navigate("ResetPassword", {
+          email: email.trim().toLowerCase(),
+          userId: route?.params?.userId || user?.id,
+        });
+        return;
+      }
+
+      // 2. Change Password flow from Settings/Profile
       if (isChangePasswordFlow) {
+        let resolvedId = user?.id || user?.user_id;
+
+        // If ID wasn't directly passed, resolve it from AsyncStorage or user-profile
+        if (!resolvedId) {
+          const storedUser = await AsyncStorage.getItem("userData");
+          if (storedUser) {
+            const parsed = JSON.parse(storedUser);
+            resolvedId = parsed?.id || parsed?.user_id;
+          }
+        }
+
+        if (!resolvedId && email) {
+          try {
+            const profileRes = await fetch(
+              `${API_BASE_URL}/api/user-profile?email=${encodeURIComponent(email.trim().toLowerCase())}`
+            );
+            if (profileRes.ok) {
+              const profile = await profileRes.json();
+              resolvedId = profile.id;
+            }
+          } catch (e) {}
+        }
+
+        if (!resolvedId) {
+          setAlertConfig({
+            visible: true,
+            type: "error",
+            title: "Update Failed",
+            message: "User session expired. Please re-login and try again.",
+            onPrimaryPress: () => setAlertConfig((prev) => ({ ...prev, visible: false })),
+          });
+          setLoading(false);
+          return;
+        }
+
         const response = await fetch(`${API_BASE_URL}/api/update-password`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            id: user?.id,
+            id: resolvedId,
             newPassword: newPassword,
           }),
         });
 
-        const data = await response.json();
+        const rawText = await response.text();
+        let data = {};
+        try {
+          data = JSON.parse(rawText);
+        } catch (e) {}
+
         if (response.ok) {
           setAlertConfig({
             visible: true,
@@ -136,7 +187,7 @@ export default function OtpVerificationScreen({ navigation, route }) {
             visible: true,
             type: "error",
             title: "Update Failed",
-            message: data.message || "Failed to update password.",
+            message: data.message || "Failed to update password. Please try again.",
             onPrimaryPress: () => setAlertConfig((prev) => ({ ...prev, visible: false })),
           });
         }
@@ -144,7 +195,7 @@ export default function OtpVerificationScreen({ navigation, route }) {
         return;
       }
 
-      // Normal Login Session setup
+      // 3. Normal Login Session setup
       if (user) {
         await AsyncStorage.setItem("userData", JSON.stringify(user));
         await AsyncStorage.setItem("userEmail", email);
@@ -157,7 +208,7 @@ export default function OtpVerificationScreen({ navigation, route }) {
         await AsyncStorage.setItem("rememberMe", "true");
       }
 
-      // Resets into AppNavigator's Stack.Screen name="Home" (MainTabNavigator)
+      // Reset to main application stack (MainTabNavigator under route name "Home")
       navigation.reset({
         index: 0,
         routes: [{ name: "Home" }],
@@ -181,12 +232,16 @@ export default function OtpVerificationScreen({ navigation, route }) {
     setLoading(true);
 
     try {
+      let actionType = "login";
+      if (isChangePasswordFlow) actionType = "change_password";
+      if (isResetFlow) actionType = "forgot_password";
+
       const response = await fetch(`${API_BASE_URL}/api/send-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
-          action: isChangePasswordFlow ? "change_password" : "login",
+          action: actionType,
         }),
       });
 
@@ -194,6 +249,9 @@ export default function OtpVerificationScreen({ navigation, route }) {
       if (response.ok) {
         if (data.generatedOtp) {
           setCurrentOtp(String(data.generatedOtp));
+        }
+        if (data.userId) {
+          route.params.userId = data.userId;
         }
         setResendCooldown(30);
         setAlertConfig({

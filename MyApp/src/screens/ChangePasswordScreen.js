@@ -7,17 +7,16 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
-  ActivityIndicator
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { fonts } from "../theme/fonts";
-import { API_BASE_URL } from '../config/config';
+import { API_BASE_URL } from "../config/config";
 import ScreenHeader from "../components/ScreenHeader"; 
 
 export default function ChangePasswordScreen({ navigation }) {
-  const [userId, setUserId] = useState(null);
-  const [userEmail, setUserEmail] = useState("");
+  const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -32,23 +31,27 @@ export default function ChangePasswordScreen({ navigation }) {
   const [errors, setErrors] = useState({});
 
   useEffect(() => {
-    const fetchUserData = async () => {
+    const loadUserFromStorage = async () => {
       try {
-        const email = await AsyncStorage.getItem("userEmail");
-        setUserEmail(email);
-        const response = await fetch(`${API_BASE_URL}/api/user-profile?email=${email}`);
-        const data = await response.json();
-        if (response.ok) setUserId(data.id);
+        const storedUser = await AsyncStorage.getItem("userData");
+        if (storedUser) {
+          setCurrentUser(JSON.parse(storedUser));
+        } else {
+          const email = await AsyncStorage.getItem("userEmail");
+          if (email) {
+            setCurrentUser({ email });
+          }
+        }
       } catch (error) {
-        console.error("Failed to load user info", error);
+        console.log("Failed to load user info from AsyncStorage:", error);
       } finally {
         setLoading(false);
       }
     };
-    fetchUserData();
+    loadUserFromStorage();
   }, []);
 
-  // 🛡️ Password Rules
+  // Password Rules
   const hasLower = /[a-z]/.test(newPassword);
   const hasUpper = /[A-Z]/.test(newPassword);
   const hasNumber = /[0-9]/.test(newPassword);
@@ -76,51 +79,58 @@ export default function ChangePasswordScreen({ navigation }) {
 
   const handleRequestOtp = async () => {
     if (!validate()) return;
-    setLoading(true);
+    setSaving(true);
 
     try {
-      const userString = await AsyncStorage.getItem("userData");
-      const user = userString ? JSON.parse(userString) : null;
+      const user = currentUser;
+      const userEmail = user?.email;
 
-      if (!user || !user.email) {
-        Alert.alert("Session Error", "Could not verify user account.");
-        setLoading(false);
+      if (!userEmail) {
+        Alert.alert("Session Error", "Could not verify user email. Please re-login.");
+        setSaving(false);
         return;
       }
 
-      // Step 1: Verify current password against server
-      const verifyRes = await fetch(`${API_BASE_URL}/api/verify-current-password`, {
+      // Step 1: Verify current password with Cloud Run /api/login endpoint
+      const verifyRes = await fetch(`${API_BASE_URL}/api/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: user.id, password: currentPassword }),
+        body: JSON.stringify({ email: userEmail.trim().toLowerCase(), password: currentPassword }),
       });
 
-      const verifyRaw = await verifyRes.text();
+      const verifyContentType = verifyRes.headers.get("content-type") || "";
       let verifyData = {};
-      try { verifyData = JSON.parse(verifyRaw); } catch (e) {}
+      if (verifyContentType.includes("application/json")) {
+        verifyData = await verifyRes.json();
+      }
 
       if (!verifyRes.ok) {
-        setErrors({ current: verifyData.message || "Incorrect current password" });
-        setLoading(false);
+        setErrors({ current: verifyData.message || "Incorrect current password." });
+        setSaving(false);
         return;
       }
 
-      // Step 2: Request change-password OTP code
-      const otpRes = await fetch(`${API_BASE_URL}/api/forgot-password`, {
+      // Step 2: Request change-password verification code via Cloud Run /api/send-otp
+      const otpRes = await fetch(`${API_BASE_URL}/api/send-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: user.email, action: "change" }),
+        body: JSON.stringify({
+          email: userEmail.trim().toLowerCase(),
+          action: "change_password",
+        }),
       });
 
-      const otpRaw = await otpRes.text();
+      const otpContentType = otpRes.headers.get("content-type") || "";
       let otpData = {};
-      try { otpData = JSON.parse(otpRaw); } catch (e) {}
+      if (otpContentType.includes("application/json")) {
+        otpData = await otpRes.json();
+      }
 
       if (otpRes.ok) {
         navigation.navigate("OtpVerification", {
-          email: user.email,
+          email: userEmail,
           user: user,
-          generatedOtp: otpData.generatedOtp,
+          generatedOtp: otpData.generatedOtp ? String(otpData.generatedOtp) : "",
           isChangePasswordFlow: true,
           newPassword: newPassword,
         });
@@ -128,15 +138,16 @@ export default function ChangePasswordScreen({ navigation }) {
         Alert.alert("Error", otpData.message || "Failed to send verification code.");
       }
     } catch (err) {
-      Alert.alert("Error", "Server connection failed.");
+      console.log("Change password error:", err);
+      Alert.alert("Connection Error", "Server connection failed. Please check your network.");
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
   if (loading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+      <View style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
         <ActivityIndicator size="large" color="#001166" />
       </View>
     );
@@ -170,7 +181,7 @@ export default function ChangePasswordScreen({ navigation }) {
           />
           {errors.new && <Error text={errors.new} />}
 
-          {/* Security requirements box[cite: 6, 9] */}
+          {/* Security requirements box */}
           {isPasswordFocused && (
             <View style={styles.rulesBox}>
               <Text style={styles.rulesTitle}>Security Requirements:</Text>
@@ -208,8 +219,6 @@ export default function ChangePasswordScreen({ navigation }) {
     </View>
   );
 }
-
-/* ---------- Reusable Sub-Components[cite: 6] ---------- */
 
 function PasswordInput({ value, setValue, show, setShow, placeholder }) {
   return (

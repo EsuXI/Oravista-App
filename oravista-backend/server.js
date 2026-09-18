@@ -94,6 +94,80 @@ app.put("/api/notifications/:notificationId/read", async (req, res) => {
 });
 
 // ---------------------------------------------------------
+// SEND OTP (HANDLES LOGIN, FORGOT_PASSWORD, CHANGE_PASSWORD)
+// ---------------------------------------------------------
+app.post("/api/send-otp", async (req, res) => {
+  const { email, action } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ message: "Email is required." });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+
+  try {
+    const { data: users, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", cleanEmail);
+
+    if (error || !users || users.length === 0) {
+      return res.status(404).json({ message: "No account found with this email." });
+    }
+
+    const user = users[0];
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    let emailSubject = "OraVista - Verification Code";
+    let emailBody = "Please use the verification code below to proceed.";
+
+    if (action === "change_password" || action === "change") {
+      emailSubject = "OraVista - Change Password Request";
+      emailBody = "You requested to change your password. Enter this code to verify your identity.";
+    } else if (action === "forgot_password") {
+      emailSubject = "OraVista - Password Reset Code";
+      emailBody = "Use this verification code to reset your account password.";
+    } else {
+      emailSubject = "OraVista - Login Verification Code";
+      emailBody = "This is your login verification code. Enter it to gain access.";
+    }
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: cleanEmail,
+      subject: emailSubject,
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 20px; color: #111827;">
+          <h2 style="color: #001166;">King Epres Dental Clinic</h2>
+          <p>Hello ${user.first_name || "Patient"},</p>
+          <p>${emailBody}</p>
+          <h1 style="background: #001166; color: #FFFFFF; padding: 15px 25px; display: inline-block; letter-spacing: 8px; border-radius: 8px;">
+            ${otp}
+          </h1>
+        </div>
+      `,
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    return res.status(200).json({
+      message: "OTP sent successfully!",
+      generatedOtp: otp,
+      userId: user.id,
+      user: {
+        id: user.id,
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+      },
+    });
+  } catch (err) {
+    console.error("Send OTP Error:", err);
+    return res.status(500).json({ message: "Failed to send verification email." });
+  }
+});
+
+// ---------------------------------------------------------
 // AUTHENTICATION ROUTES
 // ---------------------------------------------------------
 

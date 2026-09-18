@@ -43,29 +43,63 @@ export default function BillingsScreen({ navigation }) {
       const storedUser = await AsyncStorage.getItem("userData");
       if (storedUser) {
         const parsed = JSON.parse(storedUser);
-        if (parsed?.id) userId = parsed.id;
+        userId = parsed?.id || parsed?.user_id;
       }
 
       if (!userId) {
-        const email = await AsyncStorage.getItem("userEmail");
-        if (email) {
-          const userRes = await fetch(`${API_BASE_URL}/api/user-profile?email=${encodeURIComponent(email)}`);
-          const userData = await userRes.json();
-          if (userRes.ok && userData.id) userId = userData.id;
-        }
+        setBillings([]);
+        setOutstanding(0);
+        setLoading(false);
+        return;
       }
 
-      if (userId) {
-        const response = await fetch(`${API_BASE_URL}/api/user-billings/${userId}`);
-        const data = await response.json();
+      // Safe fetch that checks Content-Type before parsing JSON
+      const response = await fetch(`${API_BASE_URL}/api/user-billings/${userId}`);
+      const contentType = response.headers.get("content-type") || "";
 
+      if (contentType.includes("application/json")) {
+        const data = await response.json();
         if (response.ok) {
           setBillings(data.records || []);
           setOutstanding(data.totalOutstanding || 0);
+        } else {
+          setBillings([]);
+          setOutstanding(0);
+        }
+      } else {
+        // Fallback: If Cloud Run server doesn't have /api/user-billings, synthesize from appointments
+        const apptRes = await fetch(`${API_BASE_URL}/api/user-appointments/${userId}`);
+        const apptContentType = apptRes.headers.get("content-type") || "";
+
+        if (apptContentType.includes("application/json")) {
+          const apptData = await apptRes.json();
+          const records = Array.isArray(apptData) ? apptData : apptData.appointments || [];
+
+          const formattedRecords = records.map((record) => {
+            const d = new Date(record.appointment_date);
+            return {
+              id: record.id,
+              title: record.service_type,
+              amount: record.amount || record.base_price || 0,
+              status: record.billing_status || record.status || "Pending",
+              date: d.toLocaleDateString("en-US", { month: "long", day: "2-digit", year: "numeric" }),
+              invoice_path: record.receipt_details,
+            };
+          });
+
+          const totalOutstanding = formattedRecords
+            .filter((r) => (r.status || "").toLowerCase() === "pending")
+            .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+
+          setBillings(formattedRecords);
+          setOutstanding(totalOutstanding);
+        } else {
+          setBillings([]);
+          setOutstanding(0);
         }
       }
     } catch (error) {
-      console.error("Failed to fetch billings", error);
+      console.log("Failed to fetch billings:", error);
       setBillings([]);
       setOutstanding(0);
     } finally {
