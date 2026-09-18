@@ -28,6 +28,7 @@ export default function HomeScreen({ navigation }) {
   const [notifications, setNotifications] = useState([]);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [notifLoading, setNotifLoading] = useState(false);
+  const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
   const [selectedCancelNotif, setSelectedCancelNotif] = useState(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
 
@@ -102,7 +103,7 @@ export default function HomeScreen({ navigation }) {
     }
   }, []);
 
-  // Fetch Notifications (declared only once)
+  // Fetch Notifications
   const fetchNotifications = useCallback(async (userId) => {
     if (!userId) return;
     setNotifLoading(true);
@@ -142,7 +143,7 @@ export default function HomeScreen({ navigation }) {
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
-  // Mark notification as read
+  // Mark single notification as read
   const markAsRead = async (notificationId) => {
     if (!userData.id) return;
     setNotifications((prev) =>
@@ -156,6 +157,31 @@ export default function HomeScreen({ navigation }) {
       });
     } catch (e) {
       console.log("Failed to mark notification read:", e);
+    }
+  };
+
+  // Mark all unread notifications as read
+  const markAllAsRead = async () => {
+    if (!userData.id || unreadCount === 0 || isMarkingAllRead) return;
+
+    const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id);
+    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    setIsMarkingAllRead(true);
+
+    try {
+      await Promise.all(
+        unreadIds.map((id) =>
+          fetch(`${API_BASE_URL}/api/notifications/${id}/read`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_id: userData.id }),
+          })
+        )
+      );
+    } catch (e) {
+      console.log("Failed to mark all notifications read:", e);
+    } finally {
+      setIsMarkingAllRead(false);
     }
   };
 
@@ -229,13 +255,7 @@ export default function HomeScreen({ navigation }) {
     const isLateNoShow = item.notification_type === "appointment_late_no_show";
 
     return (
-      <TouchableOpacity
-        style={[styles.notifCard, !item.is_read && styles.notifCardUnread]}
-        onPress={() => {
-          if (!item.is_read) markAsRead(item.id);
-        }}
-        activeOpacity={0.8}
-      >
+      <View style={[styles.notifCard, !item.is_read && styles.notifCardUnread]}>
         <View style={styles.notifHeaderRow}>
           <View style={styles.notifTitleGroup}>
             {!item.is_read && <View style={styles.unreadDot} />}
@@ -253,27 +273,40 @@ export default function HomeScreen({ navigation }) {
 
         <Text style={styles.notifMessage}>{item.message}</Text>
 
-        {isLateNoShow && (
-          <View style={styles.notifActionRow}>
-            <TouchableOpacity
-              style={styles.notifCancelBtn}
-              onPress={() => {
-                setSelectedCancelNotif(item);
-                setShowCancelModal(true);
-              }}
-            >
-              <Text style={styles.notifCancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
+        {/* Action Row */}
+        <View style={styles.notifFooterRow}>
+          {isLateNoShow && (
+            <View style={styles.notifActionRow}>
+              <TouchableOpacity
+                style={styles.notifCancelBtn}
+                onPress={() => {
+                  setSelectedCancelNotif(item);
+                  setShowCancelModal(true);
+                }}
+              >
+                <Text style={styles.notifCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
 
+              <TouchableOpacity
+                style={styles.notifRescheduleBtn}
+                onPress={() => handleLateNoShowReschedule(item)}
+              >
+                <Text style={styles.notifRescheduleBtnText}>Reschedule</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {!item.is_read && (
             <TouchableOpacity
-              style={styles.notifRescheduleBtn}
-              onPress={() => handleLateNoShowReschedule(item)}
+              style={styles.markReadSingleBtn}
+              onPress={() => markAsRead(item.id)}
             >
-              <Text style={styles.notifRescheduleBtnText}>Reschedule</Text>
+              <Ionicons name="checkmark-outline" size={14} color="#001166" />
+              <Text style={styles.markReadSingleText}>Mark as read</Text>
             </TouchableOpacity>
-          </View>
-        )}
-      </TouchableOpacity>
+          )}
+        </View>
+      </View>
     );
   };
 
@@ -460,8 +493,9 @@ export default function HomeScreen({ navigation }) {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
+            {/* Header */}
             <View style={styles.modalHeader}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
                 <Ionicons name="notifications" size={22} color="#001166" />
                 <Text style={styles.modalTitle}>Notifications</Text>
                 {unreadCount > 0 && (
@@ -470,6 +504,18 @@ export default function HomeScreen({ navigation }) {
                   </View>
                 )}
               </View>
+
+              {unreadCount > 0 && (
+                <TouchableOpacity
+                  style={styles.markAllReadBtn}
+                  onPress={markAllAsRead}
+                  disabled={isMarkingAllRead}
+                >
+                  <Ionicons name="checkmark-done" size={16} color="#001166" />
+                  <Text style={styles.markAllReadText}>Mark all as read</Text>
+                </TouchableOpacity>
+              )}
+
               <TouchableOpacity
                 style={styles.modalCloseBtn}
                 onPress={() => setShowNotificationModal(false)}
@@ -645,17 +691,27 @@ const styles = StyleSheet.create({
   },
   modalHeader: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 16,
     paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: "#F3F4F6",
   },
   modalTitle: { fontSize: 18, fontFamily: fonts.bold, color: "#001166" },
-  modalCloseBtn: { padding: 4 },
+  modalCloseBtn: { padding: 4, marginLeft: 8 },
   unreadCountBadge: { backgroundColor: "#FEE2E2", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
   unreadCountBadgeText: { color: "#DC2626", fontSize: 11, fontFamily: fonts.bold },
+  markAllReadBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: "#E8EBF5",
+  },
+  markAllReadText: { fontSize: 11, fontFamily: fonts.semiBold, color: "#001166" },
   centerBox: { padding: 30, alignItems: "center" },
   notifCard: {
     backgroundColor: "#F9FAFB",
@@ -675,7 +731,15 @@ const styles = StyleSheet.create({
   notifTitle: { fontSize: 14, fontFamily: fonts.bold, color: "#001166" },
   notifTime: { fontSize: 11, fontFamily: fonts.regular, color: "#9CA3AF" },
   notifMessage: { fontSize: 13, fontFamily: fonts.regular, color: "#4B5563", lineHeight: 18 },
-  notifActionRow: { flexDirection: "row", gap: 8, marginTop: 10 },
+  notifFooterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 10,
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  notifActionRow: { flexDirection: "row", gap: 8 },
   notifCancelBtn: {
     backgroundColor: "#DC2626",
     paddingVertical: 6,
@@ -690,6 +754,18 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   notifRescheduleBtnText: { color: "#FFFFFF", fontFamily: fonts.bold, fontSize: 12 },
+  markReadSingleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: "#E0E7FF",
+    alignSelf: "flex-end",
+    marginLeft: "auto",
+  },
+  markReadSingleText: { fontSize: 11, fontFamily: fonts.semiBold, color: "#001166" },
   emptyNotifBox: { alignItems: "center", paddingVertical: 40 },
   emptyNotifText: { color: "#9CA3AF", fontFamily: fonts.medium, fontSize: 14, marginTop: 10 },
 });
