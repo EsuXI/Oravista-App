@@ -79,6 +79,7 @@ export default function OtpVerificationScreen({ navigation, route }) {
   };
 
   const handleVerify = async () => {
+    if (loading) return;
     const code = otp.join("");
     if (code.length !== 6) {
       setAlertConfig({
@@ -94,7 +95,7 @@ export default function OtpVerificationScreen({ navigation, route }) {
     setLoading(true);
 
     try {
-      if (currentOtp && code !== String(currentOtp)) {
+      if (!/^\d{6}$/.test(String(currentOtp)) || code !== String(currentOtp)) {
         setAlertConfig({
           visible: true,
           type: "error",
@@ -109,15 +110,26 @@ export default function OtpVerificationScreen({ navigation, route }) {
       // 1. Forgot Password flow -> Proceed to ResetPasswordScreen
       if (isResetFlow) {
         setLoading(false);
-        navigation.navigate("ResetPassword", {
+        navigation.replace("ResetPassword", {
           email: email.trim().toLowerCase(),
-          userId: route?.params?.userId || user?.id,
+          otpVerified: true,
         });
         return;
       }
 
       // 2. Change Password flow from Settings/Profile
       if (isChangePasswordFlow) {
+        const oldPassword = route?.params?.oldPassword;
+        if (!oldPassword || !newPassword) {
+          setAlertConfig({
+            visible: true,
+            type: "error",
+            title: "Update Failed",
+            message: "Please go back and enter your current and new passwords again.",
+            onPrimaryPress: () => setAlertConfig((prev) => ({ ...prev, visible: false })),
+          });
+          return;
+        }
         let resolvedId = user?.id || user?.user_id;
 
         // If ID wasn't directly passed, resolve it from AsyncStorage or user-profile
@@ -158,6 +170,7 @@ export default function OtpVerificationScreen({ navigation, route }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             id: resolvedId,
+            oldPassword,
             newPassword: newPassword,
           }),
         });
@@ -169,6 +182,7 @@ export default function OtpVerificationScreen({ navigation, route }) {
         } catch (e) {}
 
         if (response.ok) {
+          navigation.setParams({ oldPassword: undefined, newPassword: undefined });
           setAlertConfig({
             visible: true,
             type: "success",
@@ -228,7 +242,7 @@ export default function OtpVerificationScreen({ navigation, route }) {
   };
 
   const handleResend = async () => {
-    if (resendCooldown > 0) return;
+    if (loading || resendCooldown > 0) return;
     setLoading(true);
 
     try {
@@ -247,12 +261,19 @@ export default function OtpVerificationScreen({ navigation, route }) {
 
       const data = await response.json();
       if (response.ok) {
-        if (data.generatedOtp) {
-          setCurrentOtp(String(data.generatedOtp));
+        if (!/^\d{6}$/.test(String(data.generatedOtp || ""))) {
+          setCurrentOtp("");
+          setAlertConfig({
+            visible: true,
+            type: "error",
+            title: "Resend Failed",
+            message: "The server did not return a verification code. Please try again.",
+            onPrimaryPress: () => setAlertConfig((prev) => ({ ...prev, visible: false })),
+          });
+          return;
         }
-        if (data.userId) {
-          route.params.userId = data.userId;
-        }
+        setCurrentOtp(String(data.generatedOtp));
+        setOtp(["", "", "", "", "", ""]);
         setResendCooldown(30);
         setAlertConfig({
           visible: true,
@@ -307,7 +328,7 @@ export default function OtpVerificationScreen({ navigation, route }) {
               ref={(ref) => (inputs.current[index] = ref)}
               style={[styles.otpBox, digit ? styles.otpBoxFilled : null]}
               keyboardType="number-pad"
-              maxLength={2}
+              maxLength={6}
               value={digit}
               onChangeText={(text) => handleChange(text, index)}
               onKeyPress={(e) => handleKeyPress(e, index)}
@@ -325,7 +346,7 @@ export default function OtpVerificationScreen({ navigation, route }) {
 
         <View style={styles.resendRow}>
           <Text style={styles.resendPrompt}>Didn't receive the code? </Text>
-          <TouchableOpacity onPress={handleResend} disabled={resendCooldown > 0}>
+          <TouchableOpacity onPress={handleResend} disabled={loading || resendCooldown > 0}>
             <Text style={[styles.resendLink, resendCooldown > 0 && styles.resendDisabled]}>
               {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend Code"}
             </Text>

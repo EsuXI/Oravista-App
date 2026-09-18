@@ -78,12 +78,12 @@ export default function ChangePasswordScreen({ navigation }) {
   };
 
   const handleRequestOtp = async () => {
-    if (!validate()) return;
+    if (saving || !validate()) return;
     setSaving(true);
 
     try {
       const user = currentUser;
-      const userEmail = user?.email;
+      const userEmail = (user?.email || "").trim().toLowerCase();
 
       if (!userEmail) {
         Alert.alert("Session Error", "Could not verify user email. Please re-login.");
@@ -110,6 +110,13 @@ export default function ChangePasswordScreen({ navigation }) {
         return;
       }
 
+      // Use the account just authenticated, not a possibly stale stored ID.
+      const verifiedUser = verifyData.user;
+      if (!verifiedUser?.id) {
+        Alert.alert("Session Error", "Could not verify your account. Please log in again.");
+        return;
+      }
+
       // Step 2: Request change-password verification code via Cloud Run /api/send-otp
       const otpRes = await fetch(`${API_BASE_URL}/api/send-otp`, {
         method: "POST",
@@ -127,11 +134,16 @@ export default function ChangePasswordScreen({ navigation }) {
       }
 
       if (otpRes.ok) {
+        if (!/^\d{6}$/.test(String(otpData.generatedOtp || ""))) {
+          Alert.alert("Verification Error", "The server did not return a verification code. Please try again.");
+          return;
+        }
         navigation.navigate("OtpVerification", {
           email: userEmail,
-          user: user,
+          user: verifiedUser,
           generatedOtp: otpData.generatedOtp ? String(otpData.generatedOtp) : "",
           isChangePasswordFlow: true,
+          oldPassword: currentPassword,
           newPassword: newPassword,
         });
       } else {

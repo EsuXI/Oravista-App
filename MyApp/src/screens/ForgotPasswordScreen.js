@@ -13,6 +13,7 @@ export default function ForgotPasswordScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
 
   const handleSendCode = async () => {
+    if (loading) return;
     setError("");
     const cleanEmail = email.trim().toLowerCase();
 
@@ -43,6 +44,10 @@ export default function ForgotPasswordScreen({ navigation }) {
       }
 
       if (response.ok) {
+        if (!/^\d{6}$/.test(String(data.generatedOtp || ""))) {
+          setError("The server did not return a verification code. Please try again.");
+          return;
+        }
         Alert.alert(
           "Code Sent",
           "Check your email for the 6-digit verification code.",
@@ -50,7 +55,6 @@ export default function ForgotPasswordScreen({ navigation }) {
             text: "Verify Now", 
             onPress: () => navigation.navigate("OtpVerification", { 
               email: cleanEmail,
-              userId: data.userId || (data.user && data.user.id),
               generatedOtp: data.generatedOtp ? String(data.generatedOtp) : "",
               isResetFlow: true // Directs to ResetPasswordScreen upon verification
             }) 

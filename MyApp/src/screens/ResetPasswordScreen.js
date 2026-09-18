@@ -43,35 +43,25 @@ export default function ResetPasswordScreen({ navigation, route }) {
   };
 
   const handleResetPassword = async () => {
-    if (!validate()) return;
+    if (loading || !validate()) return;
     setLoading(true);
 
     try {
-      // 1. Resolve user ID using email
-      let targetUserId = route?.params?.userId || route?.params?.user?.id;
-
-      if (!targetUserId && email) {
-        const userRes = await fetch(
-          `${API_BASE_URL}/api/user-profile?email=${encodeURIComponent(email.trim().toLowerCase())}`
-        );
-        if (userRes.ok) {
-          const profile = await userRes.json();
-          targetUserId = profile.id;
-        }
-      }
-
-      if (!targetUserId) {
-        Alert.alert("Error", "Could not identify user account. Please request a new code.");
-        setLoading(false);
+      const cleanEmail = email.trim().toLowerCase();
+      // UI flow guard only; the existing server checks no OTP proof on this route.
+      if (!cleanEmail || route?.params?.otpVerified !== true) {
+        Alert.alert("Verification Required", "Please request and verify an email code first.", [
+          { text: "Request Code", onPress: () => navigation.navigate("ForgotPassword") },
+        ]);
         return;
       }
 
-      // 2. Update password using server's PUT /api/update-password
-      const response = await fetch(`${API_BASE_URL}/api/update-password`, {
+      // Match the existing Cloud Run / web forgot-password contract.
+      const response = await fetch(`${API_BASE_URL}/api/reset-password-by-email`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: targetUserId,
+          email: cleanEmail,
           newPassword: newPassword,
         }),
       });
@@ -83,8 +73,9 @@ export default function ResetPasswordScreen({ navigation, route }) {
       } catch (e) {}
 
       if (response.ok) {
-        Alert.alert("Success", "Your password has been reset securely!", [
-          { text: "Login Now", onPress: () => navigation.navigate("Login") },
+        navigation.setParams({ otpVerified: false });
+        Alert.alert("Success", "Your password has been reset successfully!", [
+          { text: "Login Now", onPress: () => navigation.reset({ index: 0, routes: [{ name: "Login" }] }) },
         ]);
       } else {
         Alert.alert("Error", data.message || "Could not reset password. Try again.");
