@@ -7,7 +7,6 @@ import {
   TextInput,
   TouchableOpacity,
   Image,
-  Alert,
   ActivityIndicator,
   Platform,
   StatusBar,
@@ -17,6 +16,7 @@ import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { fonts } from "../theme/fonts";
 import { API_BASE_URL } from "../config/config";
+import CustomAlertModal from "../components/CustomAlertModal";
 
 export default function EditProfileScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
@@ -30,12 +30,20 @@ export default function EditProfileScreen({ navigation }) {
   const [age, setAge] = useState("");
   const [sex, setSex] = useState("");
   const [occupation, setOccupation] = useState("");
-  
-  // profileImage holds preview; newImageAsset holds selected file to upload on Save
+
   const [profileImage, setProfileImage] = useState(null);
   const [newImagePickerAsset, setNewImagePickerAsset] = useState(null);
 
   const [errors, setErrors] = useState({});
+
+  // Central Custom Alert Modal State
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    type: "success",
+    title: "",
+    message: "",
+    onPrimaryPress: () => {},
+  });
 
   useEffect(() => {
     loadUserData();
@@ -65,7 +73,13 @@ export default function EditProfileScreen({ navigation }) {
   const pickImage = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert("Permission Required", "Permission to access photo library is required!");
+      setAlertConfig({
+        visible: true,
+        type: "warning",
+        title: "Permission Needed",
+        message: "Please allow access to your photo library to choose an avatar.",
+        onPrimaryPress: () => setAlertConfig((prev) => ({ ...prev, visible: false })),
+      });
       return;
     }
 
@@ -77,7 +91,6 @@ export default function EditProfileScreen({ navigation }) {
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
-      // Stage the image for preview; do not save until user presses "Save Changes"
       setProfileImage(result.assets[0].uri);
       setNewImagePickerAsset(result.assets[0]);
     }
@@ -88,21 +101,18 @@ export default function EditProfileScreen({ navigation }) {
     const nameRegex = /^[A-Za-zÀ-ÿ\s'-]{2,30}$/;
     const phPhoneRegex = /^(09|\+639)\d{9}$/;
 
-    // First Name validation
     if (!firstName.trim()) {
       newErrors.firstName = "First name is required.";
     } else if (!nameRegex.test(firstName.trim())) {
       newErrors.firstName = "2-30 letters only. No numbers or symbols.";
     }
 
-    // Last Name validation
     if (!lastName.trim()) {
       newErrors.lastName = "Last name is required.";
     } else if (!nameRegex.test(lastName.trim())) {
       newErrors.lastName = "2-30 letters only. No numbers or symbols.";
     }
 
-    // Phone Number validation (Optional, but if entered must be PH format)
     if (phone.trim()) {
       const cleanPhone = phone.replace(/[\s-]/g, "");
       if (!phPhoneRegex.test(cleanPhone)) {
@@ -110,7 +120,6 @@ export default function EditProfileScreen({ navigation }) {
       }
     }
 
-    // Date of birth format check (YYYY-MM-DD) if provided
     if (dob.trim()) {
       const dobRegex = /^\d{4}-\d{2}-\d{2}$/;
       if (!dobRegex.test(dob.trim())) {
@@ -125,7 +134,13 @@ export default function EditProfileScreen({ navigation }) {
   const handleSave = async () => {
     if (!validateForm()) return;
     if (!user || !user.id) {
-      Alert.alert("Session Error", "Could not locate user session.");
+      setAlertConfig({
+        visible: true,
+        type: "error",
+        title: "Session Error",
+        message: "Could not locate your account session. Please log in again.",
+        onPrimaryPress: () => setAlertConfig((prev) => ({ ...prev, visible: false })),
+      });
       return;
     }
 
@@ -133,7 +148,6 @@ export default function EditProfileScreen({ navigation }) {
     let finalProfilePicUrl = profileImage;
 
     try {
-      // 1. If user selected a new photo, upload it first
       if (newImagePickerAsset) {
         try {
           const uri = newImagePickerAsset.uri;
@@ -161,22 +175,22 @@ export default function EditProfileScreen({ navigation }) {
             finalProfilePicUrl = uploadData.imageUrl;
           }
         } catch (uploadErr) {
-          console.log("Photo upload warning (falling back to current URL):", uploadErr);
+          console.log("Photo upload warning:", uploadErr);
         }
       }
 
-      // 2. Format phone to standard 09XXXXXXXXX
       let formattedPhone = phone.trim();
       if (formattedPhone.startsWith("+63")) {
         formattedPhone = "0" + formattedPhone.slice(3);
       }
       formattedPhone = formattedPhone.replace(/[\s-]/g, "");
 
-      // 3. Prepare payload (use null for empty dates/ints to avoid Postgres syntax error)
       const payload = {
         id: user.id,
         firstName: firstName.trim(),
         lastName: lastName.trim(),
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
         email: email.trim(),
         phone: formattedPhone || null,
         dob: dob.trim() || null,
@@ -184,6 +198,7 @@ export default function EditProfileScreen({ navigation }) {
         sex: sex.trim() || null,
         occupation: occupation.trim() || null,
         profilePic: finalProfilePicUrl || null,
+        profile_image: finalProfilePicUrl || null,
       };
 
       const response = await fetch(`${API_BASE_URL}/api/update-profile`, {
@@ -213,15 +228,34 @@ export default function EditProfileScreen({ navigation }) {
         await AsyncStorage.setItem("userData", JSON.stringify(updatedUser));
         setNewImagePickerAsset(null);
 
-        Alert.alert("Success", "Profile updated successfully!", [
-          { text: "OK", onPress: () => navigation.goBack() }
-        ]);
+        setAlertConfig({
+          visible: true,
+          type: "success",
+          title: "Profile Updated",
+          message: "Your profile information has been saved successfully.",
+          onPrimaryPress: () => {
+            setAlertConfig((prev) => ({ ...prev, visible: false }));
+            navigation.goBack();
+          },
+        });
       } else {
-        Alert.alert("Update Failed", data.message || "Could not update profile.");
+        setAlertConfig({
+          visible: true,
+          type: "error",
+          title: "Update Failed",
+          message: data.message || "Could not update profile information.",
+          onPrimaryPress: () => setAlertConfig((prev) => ({ ...prev, visible: false })),
+        });
       }
     } catch (err) {
       console.log("Profile update error:", err);
-      Alert.alert("Error", "Network request failed. Check server connection.");
+      setAlertConfig({
+        visible: true,
+        type: "error",
+        title: "Connection Error",
+        message: "Network request failed. Please verify your connection.",
+        onPrimaryPress: () => setAlertConfig((prev) => ({ ...prev, visible: false })),
+      });
     } finally {
       setLoading(false);
     }
@@ -231,7 +265,6 @@ export default function EditProfileScreen({ navigation }) {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#001166" />
 
-      {/* Curved Header with Back Button */}
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.backButton} 
@@ -261,7 +294,7 @@ export default function EditProfileScreen({ navigation }) {
           </View>
           <Text style={styles.changePhotoText}>Tap camera to select photo</Text>
           {newImagePickerAsset && (
-            <Text style={styles.stagedBadge}>Photo selected (Click Save Changes to apply)</Text>
+            <Text style={styles.stagedBadge}>Photo selected (Tap Save Changes to apply)</Text>
           )}
         </View>
 
@@ -383,7 +416,6 @@ export default function EditProfileScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Save Button */}
         <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={loading}>
           {loading ? (
             <ActivityIndicator color="#FFFFFF" />
@@ -392,6 +424,15 @@ export default function EditProfileScreen({ navigation }) {
           )}
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Reusable Custom Rounded Alert */}
+      <CustomAlertModal
+        visible={alertConfig.visible}
+        type={alertConfig.type}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        onPrimaryPress={alertConfig.onPrimaryPress}
+      />
     </View>
   );
 }
@@ -480,7 +521,7 @@ const styles = StyleSheet.create({
   saveBtn: {
     backgroundColor: "#001166",
     height: 52,
-    borderRadius: 14,
+    borderRadius: 18,
     justifyContent: "center",
     alignItems: "center",
     marginTop: 16,

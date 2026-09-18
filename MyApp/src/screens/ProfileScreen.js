@@ -6,16 +6,17 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  Alert,
   StatusBar,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { fonts } from "../theme/fonts";
+import CustomAlertModal from "../components/CustomAlertModal";
 
 export default function ProfileScreen({ navigation }) {
   const [user, setUser] = useState(null);
+  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -34,23 +35,15 @@ export default function ProfileScreen({ navigation }) {
     }
   };
 
-  const handleLogout = () => {
-    Alert.alert("Log Out", "Are you sure you want to log out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Log Out",
-        style: "destructive",
-        onPress: async () => {
-          await AsyncStorage.removeItem("userToken");
-          await AsyncStorage.removeItem("userData");
-          await AsyncStorage.removeItem("userEmail");
-          navigation.reset({
-            index: 0,
-            routes: [{ name: "Login" }],
-          });
-        },
-      },
-    ]);
+  const handleLogout = async () => {
+    setLogoutModalVisible(false);
+    await AsyncStorage.removeItem("userToken");
+    await AsyncStorage.removeItem("userData");
+    await AsyncStorage.removeItem("userEmail");
+    navigation.reset({
+      index: 0,
+      routes: [{ name: "Login" }],
+    });
   };
 
   const fullName = user
@@ -123,11 +116,23 @@ export default function ProfileScreen({ navigation }) {
         </View>
 
         {/* Logout Button */}
-        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+        <TouchableOpacity style={styles.logoutBtn} onPress={() => setLogoutModalVisible(true)}>
           <Ionicons name="log-out-outline" size={20} color="#EF4444" style={{ marginRight: 8 }} />
           <Text style={styles.logoutText}>Log Out</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Custom Rounded Log Out Popup */}
+      <CustomAlertModal
+        visible={logoutModalVisible}
+        type="warning"
+        title="Log Out"
+        message="Are you sure you want to log out of your OraVista account?"
+        primaryText="Log Out"
+        secondaryText="Cancel"
+        onPrimaryPress={handleLogout}
+        onSecondaryPress={() => setLogoutModalVisible(false)}
+      />
     </View>
   );
 }
@@ -201,7 +206,7 @@ const styles = StyleSheet.create({
   },
   menuSection: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 24, // Rounder card styling
+    borderRadius: 24,
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderWidth: 1,
@@ -222,7 +227,7 @@ const styles = StyleSheet.create({
   menuIconBox: {
     width: 44,
     height: 44,
-    borderRadius: 16, // Extra rounded icon container
+    borderRadius: 16,
     backgroundColor: "#EEF2FF",
     alignItems: "center",
     justifyContent: "center",
