@@ -49,7 +49,6 @@ export default function OtpVerificationScreen({ navigation, route }) {
   }, [resendCooldown]);
 
   const handleChange = (text, index) => {
-    // Handle paste of 6 digits
     if (text.length === 6 && /^\d+$/.test(text)) {
       const newOtp = text.split("");
       setOtp(newOtp);
@@ -126,7 +125,18 @@ export default function OtpVerificationScreen({ navigation, route }) {
             message: "Your password has been updated successfully.",
             onPrimaryPress: () => {
               setAlertConfig((prev) => ({ ...prev, visible: false }));
-              navigation.navigate("Settings");
+              // Cleanly resets navigation back to Profile tab
+              navigation.reset({
+                index: 0,
+                routes: [
+                  {
+                    name: "Home",
+                    state: {
+                      routes: [{ name: "Profile" }],
+                    },
+                  },
+                ],
+              });
             },
           });
         } else {
@@ -265,7 +275,6 @@ export default function OtpVerificationScreen({ navigation, route }) {
         </View>
       </View>
 
-      {/* Custom Rounded Dialog */}
       <CustomAlertModal
         visible={alertConfig.visible}
         type={alertConfig.type}
