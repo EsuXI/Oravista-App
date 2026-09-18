@@ -1,116 +1,153 @@
-import React, { useState, useCallback } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, ActivityIndicator } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useFocusEffect } from "@react-navigation/native";
 import { fonts } from "../theme/fonts";
-import { API_BASE_URL } from '../config/config';
-import ScreenHeader from "../components/ScreenHeader"; 
 
 export default function AccountInformationScreen({ navigation }) {
-  const [patient, setPatient] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [profilePic, setProfilePic] = useState(null);
+  const [user, setUser] = useState(null);
 
-  useFocusEffect(
-    useCallback(() => {
-      const loadProfileData = async () => {
-        setLoading(true);
-        try {
-          const userEmail = await AsyncStorage.getItem("userEmail");
-          const response = await fetch(`${API_BASE_URL}/api/user-profile?email=${userEmail}`);
-          const data = await response.json();
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
+      loadUserData();
+    });
+    loadUserData();
+    return unsubscribe;
+  }, [navigation]);
 
-          if (response.ok) {
-            setPatient(data);
-            if (data.profile_picture) {
-              setProfilePic(data.profile_picture.startsWith('http') ? data.profile_picture : `${API_BASE_URL}/${data.profile_picture}?t=${new Date().getTime()}`);
-            }
-          }
-        } catch (error) {
-          console.error("Failed to load profile", error);
-        } finally {
-          setLoading(false);
-        }
-      };
-      loadProfileData();
-    }, [])
-  );
+  const loadUserData = async () => {
+    try {
+      const stored = await AsyncStorage.getItem("userData");
+      if (stored) {
+        setUser(JSON.parse(stored));
+      }
+    } catch (err) {
+      console.log("Error reading userData:", err);
+    }
+  };
 
-  if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#001166" />
-      </View>
-    );
-  }
-
-  const fullName = patient ? `${patient.first_name} ${patient.last_name}` : "User";
+  const fullName = user
+    ? `${user.first_name || user.firstName || ""} ${user.last_name || user.lastName || ""}`.trim()
+    : "—";
 
   return (
     <View style={styles.container}>
-      <ScreenHeader 
-        title="Account Details" 
-        showBack={true} 
-        rightIcon="create-outline" 
-        onRightPress={() => navigation.navigate("EditProfile", { userData: patient })} 
-      />
+      <StatusBar barStyle="light-content" backgroundColor="#001166" />
+      
+      {/* Curved Header with Back Button */}
+      <View style={styles.header}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Account Information</Text>
+      </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.profileCard}>
-          <View style={styles.avatarContainer}>
-            {profilePic ? (
-              <Image source={{ uri: profilePic }} style={styles.avatarImage} />
-            ) : (
-              <Ionicons name="person" size={40} color="#9CA3AF" />
-            )}
-          </View>
-          <Text style={styles.userName}>{fullName}</Text>
-          <Text style={styles.userEmail}>{patient?.email}</Text>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.card}>
+          <InfoRow icon="person-outline" label="Full Name" value={fullName || "—"} />
+          <InfoRow icon="mail-outline" label="Email Address" value={user?.email || "—"} />
+          <InfoRow icon="call-outline" label="Phone Number" value={user?.phone || "—"} />
+          <InfoRow icon="calendar-outline" label="Date of Birth" value={user?.dob || "—"} />
+          <InfoRow icon="hourglass-outline" label="Age" value={user?.age ? String(user.age) : "—"} />
+          <InfoRow icon="transgender-outline" label="Sex / Gender" value={user?.sex || "—"} />
+          <InfoRow icon="briefcase-outline" label="Occupation" value={user?.occupation || "—"} isLast />
         </View>
 
-        <View style={styles.infoSection}>
-          <Text style={styles.sectionTitle}>Personal Information</Text>
-          <InfoRow label="First Name" value={patient?.first_name} icon="person-outline" />
-          <InfoRow label="Last Name" value={patient?.last_name} icon="person-outline" />
-          <InfoRow label="Birthdate" value={patient?.dob || "Not set"} icon="calendar-outline" />
-          <InfoRow label="Age" value={patient?.age ? `${patient.age} yrs old` : "Not set"} icon="calculator-outline" />
-          <InfoRow label="Contact No" value={patient?.phone || "Not set"} icon="call-outline" />
-          <InfoRow label="Address" value={patient?.address || "Not set"} icon="location-outline" />
-          <InfoRow label="Occupation" value={patient?.occupation || "Not set"} icon="briefcase-outline" />
-        </View>
+        <TouchableOpacity
+          style={styles.editButton}
+          onPress={() => navigation.navigate("EditProfile")}
+        >
+          <Ionicons name="create-outline" size={18} color="#001166" style={{ marginRight: 8 }} />
+          <Text style={styles.editButtonText}>Edit Information</Text>
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );
 }
 
-const InfoRow = ({ label, value, icon }) => (
-  <View style={styles.infoRow}>
-    <View style={styles.iconCircle}>
-      <Ionicons name={icon} size={18} color="#001166" />
+function InfoRow({ icon, label, value, isLast = false }) {
+  return (
+    <View style={[styles.infoRow, isLast && styles.noBorder]}>
+      <View style={styles.iconBox}>
+        <Ionicons name={icon} size={20} color="#001166" />
+      </View>
+      <View style={styles.textContainer}>
+        <Text style={styles.label}>{label}</Text>
+        <Text style={styles.value}>{value}</Text>
+      </View>
     </View>
-    <View style={styles.infoTextContainer}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue}>{value}</Text>
-    </View>
-  </View>
-);
+  );
+}
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F9FAFB" },
-  scrollContent: { paddingBottom: 40 },
-  profileCard: {
-    alignItems: "center", marginTop: 20, backgroundColor: "#FFFFFF", marginHorizontal: 20, borderRadius: 24, padding: 24, elevation: 2, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 5, shadowOffset: { width: 0, height: 2 },
+  header: {
+    backgroundColor: "#001166",
+    paddingTop: 55,
+    paddingBottom: 28,
+    paddingHorizontal: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    position: "relative",
   },
-  avatarContainer: { width: 100, height: 100, borderRadius: 50, backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center", borderWidth: 3, borderColor: "#E5E7EB", overflow: "hidden", marginBottom: 12 },
-  avatarImage: { width: "100%", height: "100%", resizeMode: "cover" },
-  userName: { fontSize: 20, fontFamily: fonts.bold, color: "#111827" },
-  userEmail: { fontSize: 14, fontFamily: fonts.medium, color: "#6B7280", marginTop: 2 },
-  infoSection: { marginTop: 24, paddingHorizontal: 20 },
-  sectionTitle: { fontSize: 16, fontFamily: fonts.bold, color: "#111827", marginBottom: 16, marginLeft: 4 },
-  infoRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFFFFF", padding: 16, borderRadius: 18, marginBottom: 12, borderWidth: 1, borderColor: "#F3F4F6" },
-  iconCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#E0E7FF", justifyContent: "center", alignItems: "center" },
-  infoTextContainer: { marginLeft: 14, flex: 1 },
-  infoLabel: { fontSize: 12, color: "#9CA3AF", fontFamily: fonts.medium, textTransform: "uppercase", letterSpacing: 0.5 },
-  infoValue: { fontSize: 15, color: "#111827", fontFamily: fonts.semiBold, marginTop: 1 },
+  backButton: {
+    position: "absolute",
+    left: 20,
+    top: 55,
+    padding: 4,
+    zIndex: 10,
+  },
+  headerTitle: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontFamily: fonts.bold,
+  },
+  content: { padding: 20, paddingBottom: 40 },
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+  },
+  noBorder: { borderBottomWidth: 0 },
+  iconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 16,
+    backgroundColor: "#EEF2FF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14,
+  },
+  textContainer: { flex: 1 },
+  label: { fontSize: 12, color: "#6B7280", fontFamily: fonts.medium },
+  value: { fontSize: 15, color: "#111827", fontFamily: fonts.semiBold, marginTop: 2 },
+  editButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: "#001166",
+    height: 52,
+    borderRadius: 26,
+    marginTop: 24,
+  },
+  editButtonText: { color: "#001166", fontSize: 15, fontFamily: fonts.semiBold },
 });

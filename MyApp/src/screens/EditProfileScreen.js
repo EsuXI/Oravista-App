@@ -3,276 +3,487 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
-  TextInput,
   ScrollView,
-  Alert,
+  TextInput,
+  TouchableOpacity,
   Image,
-  ActivityIndicator
+  Alert,
+  ActivityIndicator,
+  Platform,
+  StatusBar,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { fonts } from "../theme/fonts";
-import { API_BASE_URL } from '../config/config';
-import ScreenHeader from "../components/ScreenHeader"; 
+import { API_BASE_URL } from "../config/config";
 
 export default function EditProfileScreen({ navigation }) {
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [userId, setUserId] = useState(null); 
-  
+  const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState(null);
+
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [dob, setDob] = useState(""); 
+  const [dob, setDob] = useState("");
   const [age, setAge] = useState("");
+  const [sex, setSex] = useState("");
   const [occupation, setOccupation] = useState("");
-  // Address removed as it does not exist in the DB schema
   
-  const [profilePic, setProfilePic] = useState(null); 
-  const [imageFile, setImageFile] = useState(null); 
+  // profileImage holds preview; newImageAsset holds selected file to upload on Save
+  const [profileImage, setProfileImage] = useState(null);
+  const [newImagePickerAsset, setNewImagePickerAsset] = useState(null);
+
   const [errors, setErrors] = useState({});
 
   useEffect(() => {
-    const loadProfile = async () => {
-      try {
-        const userEmail = await AsyncStorage.getItem("userEmail");
-        const response = await fetch(`${API_BASE_URL}/api/user-profile?email=${userEmail}`);
-        const data = await response.json();
-
-        if (response.ok) {
-          setUserId(data.id);
-          setFirstName(data.first_name || "");
-          setLastName(data.last_name || "");
-          setEmail(data.email || "");
-          setPhone(data.phone || "");
-          setDob(data.dob || ""); 
-          setAge(data.age ? data.age.toString() : "");
-          setOccupation(data.occupation || ""); 
-          
-          if (data.profile_picture) {
-            setProfilePic(data.profile_picture.startsWith('http') ? data.profile_picture : `${API_BASE_URL}/${data.profile_picture}?t=${new Date().getTime()}`);
-          }
-        }
-      } catch (error) {
-        console.error("Failed to load profile", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadProfile();
+    loadUserData();
   }, []);
 
-  const handleDobChange = (text) => {
-    setDob(text);
-    if (text.length === 10) { 
-      const birthDate = new Date(text);
-      if (!isNaN(birthDate)) {
-        const today = new Date();
-        let calculatedAge = today.getFullYear() - birthDate.getFullYear();
-        const m = today.getMonth() - birthDate.getMonth();
-        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-          calculatedAge--;
-        }
-        setAge(calculatedAge > 0 ? calculatedAge.toString() : "");
+  const loadUserData = async () => {
+    try {
+      const stored = await AsyncStorage.getItem("userData");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setUser(parsed);
+        setFirstName(parsed.first_name || parsed.firstName || "");
+        setLastName(parsed.last_name || parsed.lastName || "");
+        setEmail(parsed.email || "");
+        setPhone(parsed.phone || "");
+        setDob(parsed.dob || "");
+        setAge(parsed.age ? String(parsed.age) : "");
+        setSex(parsed.sex || "");
+        setOccupation(parsed.occupation || "");
+        setProfileImage(parsed.profile_pic || parsed.profile_image || parsed.profileImage || null);
       }
+    } catch (err) {
+      console.log("Error loading user data:", err);
     }
   };
 
-  const handleImagePick = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert("Permission Required", "We need access to your photos to change your avatar.");
+  const pickImage = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permission Required", "Permission to access photo library is required!");
       return;
     }
 
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.5,
+      quality: 0.7,
     });
 
-    if (!result.canceled) {
-      setProfilePic(result.assets[0].uri);
-      setImageFile(result.assets[0]); 
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      // Stage the image for preview; do not save until user presses "Save Changes"
+      setProfileImage(result.assets[0].uri);
+      setNewImagePickerAsset(result.assets[0]);
     }
   };
 
-  const validate = () => {
-    let newErrors = {};
+  const validateForm = () => {
+    const newErrors = {};
+    const nameRegex = /^[A-Za-zÀ-ÿ\s'-]{2,30}$/;
+    const phPhoneRegex = /^(09|\+639)\d{9}$/;
 
-    if (!firstName.trim()) newErrors.firstName = "Required";
-    if (!lastName.trim()) newErrors.lastName = "Required";
-    
-    if (!phone.trim()) newErrors.phone = "Required";
-    else if (!/^09[0-9]{9}$/.test(phone)) newErrors.phone = "Must be an 11-digit number starting with 09";
-    
-    if (!dob.trim()) newErrors.dob = "Required (Format: YYYY-MM-DD)";
+    // First Name validation
+    if (!firstName.trim()) {
+      newErrors.firstName = "First name is required.";
+    } else if (!nameRegex.test(firstName.trim())) {
+      newErrors.firstName = "2-30 letters only. No numbers or symbols.";
+    }
+
+    // Last Name validation
+    if (!lastName.trim()) {
+      newErrors.lastName = "Last name is required.";
+    } else if (!nameRegex.test(lastName.trim())) {
+      newErrors.lastName = "2-30 letters only. No numbers or symbols.";
+    }
+
+    // Phone Number validation (Optional, but if entered must be PH format)
+    if (phone.trim()) {
+      const cleanPhone = phone.replace(/[\s-]/g, "");
+      if (!phPhoneRegex.test(cleanPhone)) {
+        newErrors.phone = "Must be valid PH number (e.g., 09123456789).";
+      }
+    }
+
+    // Date of birth format check (YYYY-MM-DD) if provided
+    if (dob.trim()) {
+      const dobRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dobRegex.test(dob.trim())) {
+        newErrors.dob = "Use format YYYY-MM-DD.";
+      }
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleSave = async () => {
-    if (!validate()) return;
-    setSaving(true);
+    if (!validateForm()) return;
+    if (!user || !user.id) {
+      Alert.alert("Session Error", "Could not locate user session.");
+      return;
+    }
+
+    setLoading(true);
+    let finalProfilePicUrl = profileImage;
 
     try {
-      // 1. Image Upload sending URL instead of FormData
-      if (imageFile) {
-        const imageResponse = await fetch(`${API_BASE_URL}/api/update-profile-picture`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: userId,
-            imageUrl: imageFile.uri 
-          })
-        });
+      // 1. If user selected a new photo, upload it first
+      if (newImagePickerAsset) {
+        try {
+          const uri = newImagePickerAsset.uri;
+          const fileType = uri.split(".").pop() || "jpg";
+          const filename = `avatar_${user.id}_${Date.now()}.${fileType}`;
 
-        if (!imageResponse.ok) {
-           Alert.alert("Error", "Failed to update profile picture.");
-           setSaving(false);
-           return; 
+          const formData = new FormData();
+          formData.append("userId", String(user.id));
+          formData.append("profileImage", {
+            uri: Platform.OS === "android" ? uri : uri.replace("file://", ""),
+            name: filename,
+            type: `image/${fileType === "png" ? "png" : "jpeg"}`,
+          });
+
+          const uploadRes = await fetch(`${API_BASE_URL}/api/upload-profile-picture`, {
+            method: "POST",
+            body: formData,
+          });
+
+          const uploadRaw = await uploadRes.text();
+          let uploadData = {};
+          try { uploadData = JSON.parse(uploadRaw); } catch (e) {}
+
+          if (uploadRes.ok && uploadData.imageUrl) {
+            finalProfilePicUrl = uploadData.imageUrl;
+          }
+        } catch (uploadErr) {
+          console.log("Photo upload warning (falling back to current URL):", uploadErr);
         }
       }
 
-      // 2. Profile Data Update
-      const updateResponse = await fetch(`${API_BASE_URL}/api/update-profile`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: userId,
-          firstName,
-          lastName,
-          email,
-          phone,
-          age,
-          occupation,
-          dob,
-          sex: null, blood_type: null, allergies: null, insurance: null, policy_number: null 
-        })
+      // 2. Format phone to standard 09XXXXXXXXX
+      let formattedPhone = phone.trim();
+      if (formattedPhone.startsWith("+63")) {
+        formattedPhone = "0" + formattedPhone.slice(3);
+      }
+      formattedPhone = formattedPhone.replace(/[\s-]/g, "");
+
+      // 3. Prepare payload (use null for empty dates/ints to avoid Postgres syntax error)
+      const payload = {
+        id: user.id,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: email.trim(),
+        phone: formattedPhone || null,
+        dob: dob.trim() || null,
+        age: age.trim() ? parseInt(age.trim(), 10) : null,
+        sex: sex.trim() || null,
+        occupation: occupation.trim() || null,
+        profilePic: finalProfilePicUrl || null,
+      };
+
+      const response = await fetch(`${API_BASE_URL}/api/update-profile`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
 
-      if (updateResponse.ok) {
-        Alert.alert("Success", "Profile updated successfully!");
-        navigation.goBack();
+      const rawText = await response.text();
+      let data = {};
+      try { data = JSON.parse(rawText); } catch (e) {}
+
+      if (response.ok) {
+        const updatedUser = {
+          ...user,
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
+          phone: formattedPhone,
+          dob: dob.trim(),
+          age: age.trim() ? parseInt(age.trim(), 10) : null,
+          sex: sex.trim(),
+          occupation: occupation.trim(),
+          profile_pic: finalProfilePicUrl,
+          profile_image: finalProfilePicUrl,
+        };
+
+        await AsyncStorage.setItem("userData", JSON.stringify(updatedUser));
+        setNewImagePickerAsset(null);
+
+        Alert.alert("Success", "Profile updated successfully!", [
+          { text: "OK", onPress: () => navigation.goBack() }
+        ]);
       } else {
-        Alert.alert("Error", "Failed to update profile text details.");
+        Alert.alert("Update Failed", data.message || "Could not update profile.");
       }
-    } catch (error) {
-      console.error(error);
-      Alert.alert("Error", "Server connection failed.");
+    } catch (err) {
+      console.log("Profile update error:", err);
+      Alert.alert("Error", "Network request failed. Check server connection.");
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#001166" />
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Edit Profile" showBack={true} />
+      <StatusBar barStyle="light-content" backgroundColor="#001166" />
 
-      <ScrollView contentContainerStyle={styles.form} showsVerticalScrollIndicator={false}>
-        
-        <View style={styles.avatarWrapper}>
+      {/* Curved Header with Back Button */}
+      <View style={styles.header}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Edit Profile</Text>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Avatar Section */}
+        <View style={styles.avatarSection}>
           <View style={styles.avatarContainer}>
-            {profilePic ? (
-              <Image source={{ uri: profilePic }} style={styles.avatarImage} />
+            {profileImage ? (
+              <Image source={{ uri: profileImage }} style={styles.avatar} />
             ) : (
-              <Ionicons name="person" size={40} color="#9CA3AF" />
+              <View style={styles.placeholderAvatar}>
+                <Ionicons name="person" size={50} color="#9CA3AF" />
+              </View>
             )}
+
+            <TouchableOpacity style={styles.cameraBtn} onPress={pickImage}>
+              <Ionicons name="camera" size={18} color="#FFFFFF" />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.cameraBadge} onPress={handleImagePick} activeOpacity={0.8}>
-            <Ionicons name="camera" size={16} color="#FFFFFF" />
-          </TouchableOpacity>
+          <Text style={styles.changePhotoText}>Tap camera to select photo</Text>
+          {newImagePickerAsset && (
+            <Text style={styles.stagedBadge}>Photo selected (Click Save Changes to apply)</Text>
+          )}
         </View>
 
-        <Label text="First Name" />
-        <Input value={firstName} setValue={setFirstName} icon="person-outline" max={50} />
-        {errors.firstName && <Error text={errors.firstName} />}
+        {/* Form Inputs */}
+        <View style={styles.form}>
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>First Name *</Text>
+            <TextInput
+              style={[styles.input, errors.firstName && styles.inputError]}
+              value={firstName}
+              onChangeText={(text) => {
+                setFirstName(text);
+                if (errors.firstName) setErrors({ ...errors, firstName: null });
+              }}
+              placeholder="First Name (letters only)"
+              placeholderTextColor="#9CA3AF"
+              maxLength={30}
+            />
+            {errors.firstName && <Text style={styles.errorText}>{errors.firstName}</Text>}
+          </View>
 
-        <Label text="Last Name" />
-        <Input value={lastName} setValue={setLastName} icon="person-outline" max={50} />
-        {errors.lastName && <Error text={errors.lastName} />}
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Last Name *</Text>
+            <TextInput
+              style={[styles.input, errors.lastName && styles.inputError]}
+              value={lastName}
+              onChangeText={(text) => {
+                setLastName(text);
+                if (errors.lastName) setErrors({ ...errors, lastName: null });
+              }}
+              placeholder="Last Name (letters only)"
+              placeholderTextColor="#9CA3AF"
+              maxLength={30}
+            />
+            {errors.lastName && <Text style={styles.errorText}>{errors.lastName}</Text>}
+          </View>
 
-        <Label text="Birthdate (YYYY-MM-DD)" />
-        <Input value={dob} setValue={handleDobChange} icon="calendar-outline" max={10} />
-        {errors.dob && <Error text={errors.dob} />}
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Email Address (Read-only)</Text>
+            <TextInput
+              style={[styles.input, styles.disabledInput]}
+              value={email}
+              editable={false}
+              placeholder="Email"
+              placeholderTextColor="#9CA3AF"
+            />
+          </View>
 
-        <Label text="Age" />
-        <Input value={age} setValue={setAge} icon="calculator-outline" editable={false} style={styles.disabledInput} />
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Phone Number (Philippines)</Text>
+            <TextInput
+              style={[styles.input, errors.phone && styles.inputError]}
+              value={phone}
+              onChangeText={(text) => {
+                setPhone(text);
+                if (errors.phone) setErrors({ ...errors, phone: null });
+              }}
+              placeholder="09XXXXXXXXX"
+              placeholderTextColor="#9CA3AF"
+              keyboardType="phone-pad"
+              maxLength={13}
+            />
+            {errors.phone && <Text style={styles.errorText}>{errors.phone}</Text>}
+          </View>
 
-        <Label text="Occupation (Optional)" />
-        <Input value={occupation} setValue={setOccupation} icon="briefcase-outline" max={50} />
+          <View style={styles.row}>
+            <View style={[styles.inputGroup, { flex: 1, marginRight: 10 }]}>
+              <Text style={styles.label}>Date of Birth</Text>
+              <TextInput
+                style={[styles.input, errors.dob && styles.inputError]}
+                value={dob}
+                onChangeText={(text) => {
+                  setDob(text);
+                  if (errors.dob) setErrors({ ...errors, dob: null });
+                }}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor="#9CA3AF"
+                maxLength={10}
+              />
+              {errors.dob && <Text style={styles.errorText}>{errors.dob}</Text>}
+            </View>
 
-        <Label text="Contact No" />
-        <Input value={phone} setValue={setPhone} icon="call-outline" keyboard="phone-pad" max={11} />
-        {errors.phone && <Error text={errors.phone} />}
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.label}>Age</Text>
+              <TextInput
+                style={styles.input}
+                value={age}
+                onChangeText={setAge}
+                placeholder="Age"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="numeric"
+                maxLength={3}
+              />
+            </View>
+          </View>
 
-        <Label text="Email (Cannot be changed)" />
-        <Input value={email} icon="mail-outline" editable={false} style={styles.disabledInput} />
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Sex / Gender</Text>
+            <TextInput
+              style={styles.input}
+              value={sex}
+              onChangeText={setSex}
+              placeholder="e.g. Male / Female"
+              placeholderTextColor="#9CA3AF"
+              maxLength={20}
+            />
+          </View>
 
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
-            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Save Changes</Text>}
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.cancelBtn} onPress={() => navigation.goBack()} disabled={saving}>
-            <Text style={styles.cancelText}>Cancel</Text>
-          </TouchableOpacity>
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Occupation</Text>
+            <TextInput
+              style={styles.input}
+              value={occupation}
+              onChangeText={setOccupation}
+              placeholder="e.g. Student, Engineer"
+              placeholderTextColor="#9CA3AF"
+              maxLength={50}
+            />
+          </View>
         </View>
+
+        {/* Save Button */}
+        <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={loading}>
+          {loading ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.saveBtnText}>Save Changes</Text>
+          )}
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );
 }
 
-const Label = ({ text }) => <Text style={styles.label}>{text}</Text>;
-
-function Input({ value, setValue, icon, editable = true, keyboard, max, style }) {
-  return (
-    <View style={[styles.inputContainer, style]}>
-      <Ionicons name={icon} size={20} color={editable ? "#6B7280" : "#D1D5DB"} />
-      <TextInput 
-        value={value} 
-        onChangeText={setValue} 
-        editable={editable} 
-        keyboardType={keyboard} 
-        maxLength={max} 
-        style={[styles.input, !editable && { color: "#9CA3AF" }]} 
-      />
-    </View>
-  );
-}
-
-const Error = ({ text }) => <Text style={styles.error}>{text}</Text>;
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#FFFFFF" },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  avatarWrapper: { alignSelf: "center", marginTop: 20, marginBottom: 10, position: "relative" },
-  avatarContainer: { width: 110, height: 110, borderRadius: 55, backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center", borderWidth: 3, borderColor: "#E5E7EB", overflow: "hidden" },
-  avatarImage: { width: "100%", height: "100%", resizeMode: "cover" },
-  cameraBadge: { position: "absolute", bottom: 0, right: 0, backgroundColor: "#001166", width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center", borderWidth: 3, borderColor: "#FFFFFF", elevation: 4 },
-  form: { padding: 24, paddingBottom: 40 },
-  label: { marginTop: 16, marginBottom: 6, fontFamily: fonts.medium, color: "#374151", fontSize: 13 },
-  inputContainer: { flexDirection: "row", alignItems: "center", backgroundColor: "#F9FAFB", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 14, paddingHorizontal: 14, height: 52 },
-  disabledInput: { backgroundColor: "#F3F4F6", borderColor: "#F3F4F6" },
-  input: { flex: 1, marginLeft: 10, fontFamily: fonts.regular, color: "#111827", fontSize: 14 },
-  error: { color: "#DC2626", fontSize: 12, marginTop: 4, marginLeft: 4, fontFamily: fonts.medium },
-  buttonContainer: { marginTop: 32, gap: 12 },
-  saveBtn: { backgroundColor: "#001166", height: 56, borderRadius: 999, justifyContent: "center", alignItems: "center" },
-  saveText: { color: "#fff", fontSize: 16, fontFamily: fonts.semiBold },
-  cancelBtn: { backgroundColor: "#F3F4F6", height: 56, borderRadius: 999, justifyContent: "center", alignItems: "center" },
-  cancelText: { color: "#4B5563", fontSize: 16, fontFamily: fonts.semiBold },
+  container: { flex: 1, backgroundColor: "#F9FAFB" },
+  header: {
+    backgroundColor: "#001166",
+    paddingTop: 55,
+    paddingBottom: 28,
+    paddingHorizontal: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    position: "relative",
+  },
+  backButton: {
+    position: "absolute",
+    left: 20,
+    top: 55,
+    padding: 4,
+    zIndex: 10,
+  },
+  headerTitle: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontFamily: fonts.bold,
+  },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 40 },
+  avatarSection: { alignItems: "center", marginVertical: 20 },
+  avatarContainer: { position: "relative" },
+  avatar: { width: 100, height: 100, borderRadius: 50 },
+  placeholderAvatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "#E5E7EB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cameraBtn: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    backgroundColor: "#001166",
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2.5,
+    borderColor: "#FFFFFF",
+  },
+  changePhotoText: {
+    marginTop: 8,
+    fontSize: 13,
+    color: "#6B7280",
+    fontFamily: fonts.medium,
+  },
+  stagedBadge: {
+    marginTop: 4,
+    fontSize: 12,
+    color: "#2563EB",
+    fontFamily: fonts.medium,
+  },
+  form: { marginTop: 4 },
+  inputGroup: { marginBottom: 16 },
+  row: { flexDirection: "row" },
+  label: { fontSize: 13, color: "#374151", fontFamily: fonts.semiBold, marginBottom: 6 },
+  input: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    height: 48,
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    color: "#111827",
+  },
+  inputError: { borderColor: "#EF4444" },
+  errorText: { color: "#EF4444", fontSize: 12, marginTop: 4, fontFamily: fonts.medium },
+  disabledInput: { backgroundColor: "#F3F4F6", color: "#6B7280" },
+  saveBtn: {
+    backgroundColor: "#001166",
+    height: 52,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 16,
+  },
+  saveBtnText: { color: "#FFFFFF", fontSize: 16, fontFamily: fonts.semiBold },
 });
