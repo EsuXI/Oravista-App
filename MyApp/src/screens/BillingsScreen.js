@@ -135,7 +135,11 @@ export default function BillingsScreen({ navigation }) {
   
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Billings" showBack={true} />
+      <ScreenHeader 
+        title="Billings" 
+        showBack={true} 
+        onBackPress={() => navigation.goBack()} 
+      />
 
       <View style={styles.balanceCard}>
         <View style={styles.balanceInfo}>

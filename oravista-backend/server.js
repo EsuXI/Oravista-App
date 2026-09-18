@@ -9,13 +9,8 @@ const fs = require("fs");
 require("dotenv").config();
 
 // ---------------------------------------------------------
-// THIS IS SERVER.JS FOR MOBILE & API
-// ---------------------------------------------------------
-
-// ---------------------------------------------------------
 // SUPABASE
 // ---------------------------------------------------------
-
 const { createClient } = require("@supabase/supabase-js");
 
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -26,7 +21,6 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 // ---------------------------------------------------------
 // EXPRESS
 // ---------------------------------------------------------
-
 const app = express();
 
 app.use(cors());
@@ -44,7 +38,6 @@ if (!fs.existsSync(uploadDir)) {
 // ---------------------------------------------------------
 // EMAIL TRANSPORTER
 // ---------------------------------------------------------
-
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -57,24 +50,48 @@ const transporter = nodemailer.createTransport({
 });
 
 // ---------------------------------------------------------
-// MULTER
+// NOTIFICATION ROUTES (RESOLVES 404)
 // ---------------------------------------------------------
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) =>
-    cb(null, "profile_" + Date.now() + path.extname(file.originalname)),
+// 1. Fetch User Notifications
+app.get("/api/notifications/:userId", async (req, res) => {
+  const { userId } = req.params;
+  try {
+    const { data: notifications, error } = await supabase
+      .from("notifications")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (error) throw error;
+    return res.status(200).json(notifications || []);
+  } catch (err) {
+    console.error("Notification fetch error:", err);
+    return res.status(500).json({ message: "Failed to fetch notifications." });
+  }
 });
 
-const upload = multer({ storage });
+// 2. Mark Notification Read
+app.put("/api/notifications/:notificationId/read", async (req, res) => {
+  const { user_id } = req.body || {};
+  const { notificationId } = req.params;
+  if (!user_id) return res.status(400).json({ message: "User ID is required." });
 
-const recordStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) =>
-    cb(null, "record_" + Date.now() + path.extname(file.originalname)),
+  try {
+    const { error } = await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("id", notificationId)
+      .eq("user_id", user_id);
+
+    if (error) throw error;
+    return res.status(200).json({ message: "Notification marked as read." });
+  } catch (err) {
+    console.error("Notification read error:", err);
+    return res.status(500).json({ message: "Failed to update notification." });
+  }
 });
-
-const uploadRecord = multer({ storage: recordStorage });
 
 // ---------------------------------------------------------
 // AUTHENTICATION ROUTES
@@ -131,10 +148,6 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
-// ---------------------------------------------------------
-// VERIFY OTP
-// ---------------------------------------------------------
-
 app.post("/api/verify-otp", async (req, res) => {
   const { email } = req.body;
 
@@ -160,10 +173,6 @@ app.post("/api/verify-otp", async (req, res) => {
     return res.status(500).json({ message: "Server error." });
   }
 });
-
-// ---------------------------------------------------------
-// FORGOT PASSWORD
-// ---------------------------------------------------------
 
 app.post("/api/forgot-password", async (req, res) => {
   const { email, action } = req.body;
@@ -219,40 +228,6 @@ app.post("/api/forgot-password", async (req, res) => {
   }
 });
 
-// ---------------------------------------------------------
-// VERIFY CURRENT PASSWORD
-// ---------------------------------------------------------
-
-app.post("/api/verify-current-password", async (req, res) => {
-  const { id, password } = req.body;
-
-  try {
-    const { data: users, error } = await supabase
-      .from("users")
-      .select("password")
-      .eq("id", id);
-
-    if (error || !users || users.length === 0) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const isMatch = await bcrypt.compare(password, users[0].password);
-
-    if (isMatch) {
-      return res.status(200).json({ message: "Valid" });
-    }
-
-    return res.status(401).json({ message: "Incorrect current password." });
-  } catch (err) {
-    console.error("Verify Current Password Error:", err);
-    return res.status(500).json({ message: "Server error" });
-  }
-});
-
-// ---------------------------------------------------------
-// UPDATE PASSWORD
-// ---------------------------------------------------------
-
 app.put("/api/update-password", async (req, res) => {
   const { id, newPassword } = req.body;
 
@@ -273,35 +248,6 @@ app.put("/api/update-password", async (req, res) => {
     return res.status(500).json({ message: "Database update failed." });
   }
 });
-
-// ---------------------------------------------------------
-// RESET PASSWORD
-// ---------------------------------------------------------
-
-app.put("/api/reset-password", async (req, res) => {
-  const { email, newPassword } = req.body;
-
-  try {
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(newPassword, salt);
-
-    const { error } = await supabase
-      .from("users")
-      .update({ password: hashedPassword })
-      .eq("email", email);
-
-    if (error) throw error;
-
-    return res.status(200).json({ message: "Password reset successful!" });
-  } catch (err) {
-    console.error("Reset Password Error:", err);
-    return res.status(500).json({ message: "Server error." });
-  }
-});
-
-// ---------------------------------------------------------
-// REGISTRATION
-// ---------------------------------------------------------
 
 app.post("/api/register", async (req, res) => {
   const { firstName, lastName, email, phone, password } = req.body;
@@ -337,7 +283,6 @@ app.post("/api/register", async (req, res) => {
 
     if (error) throw error;
 
-    // Ensure corresponding patient record exists for web profile compatibility
     if (newUser && newUser.id) {
       await supabase.from("patient").insert([
         {
@@ -357,66 +302,7 @@ app.post("/api/register", async (req, res) => {
 });
 
 // ---------------------------------------------------------
-// PROFILE PICTURE UPLOAD
-// ---------------------------------------------------------
-
-const memoryStorage = multer.memoryStorage();
-const memoryUpload = multer({ storage: memoryStorage });
-
-app.post(
-  "/api/upload-profile-picture",
-  memoryUpload.single("profileImage"),
-  async (req, res) => {
-    const { userId } = req.body;
-
-    if (!req.file) {
-      return res.status(400).json({ message: "No file uploaded" });
-    }
-
-    const fileName = `profile_${userId}_${Date.now()}.jpg`;
-
-    try {
-      const { error } = await supabase.storage
-        .from("avatars")
-        .upload(fileName, req.file.buffer, {
-          contentType: req.file.mimetype,
-          upsert: true,
-        });
-
-      if (error) throw error;
-
-      const { data: publicUrlData } = supabase.storage
-        .from("avatars")
-        .getPublicUrl(fileName);
-
-      const publicUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
-
-      // Update users table
-      await supabase
-        .from("users")
-        .update({ profile_picture: publicUrl, profile_pic: publicUrl })
-        .eq("id", userId);
-
-      // Also update patient table for web sync
-      await supabase
-        .from("patient")
-        .update({ profile_image: publicUrl })
-        .eq("user_id", userId);
-
-      return res.status(200).json({
-        message: "Uploaded successfully!",
-        filePath: publicUrl,
-        imageUrl: publicUrl,
-      });
-    } catch (err) {
-      console.error("Upload Error:", err);
-      return res.status(500).json({ message: "Database update failed." });
-    }
-  }
-);
-
-// ---------------------------------------------------------
-// UPDATE PROFILE (FIXED: SYNC BOTH USERS & PATIENT TABLES)
+// UPDATE PROFILE
 // ---------------------------------------------------------
 
 app.put("/api/update-profile", async (req, res) => {
@@ -445,7 +331,6 @@ app.put("/api/update-profile", async (req, res) => {
   const resolvedPic = profilePic || profile_image;
 
   try {
-    // 1. Update users table
     const { error: userError } = await supabase
       .from("users")
       .update({
@@ -468,7 +353,6 @@ app.put("/api/update-profile", async (req, res) => {
 
     if (userError) throw userError;
 
-    // 2. Update patient table so Web Profile stays 100% in sync
     const { data: existingPatient } = await supabase
       .from("patient")
       .select("id")
@@ -511,93 +395,7 @@ app.put("/api/update-profile", async (req, res) => {
 });
 
 // ---------------------------------------------------------
-// USER BILLINGS
-// ---------------------------------------------------------
-
-app.get("/api/user-billings/:userId", async (req, res) => {
-  const { userId } = req.params;
-
-  try {
-    const { data: records, error } = await supabase
-      .from("appointments")
-      .select("id, service_type, amount, base_price, billing_status, appointment_date, receipt_details")
-      .eq("user_id", userId)
-      .order("appointment_date", { ascending: false });
-
-    if (error) throw error;
-
-    const totalOutstanding = (records || [])
-      .filter((r) => r.billing_status === "Pending")
-      .reduce((sum, r) => sum + Number(r.amount || r.base_price || 0), 0);
-
-    const formattedRecords = (records || []).map((record) => {
-      const d = new Date(record.appointment_date);
-      const formattedDate = d.toLocaleDateString("en-US", {
-        month: "long",
-        day: "2-digit",
-        year: "numeric",
-      });
-
-      return {
-        id: record.id,
-        title: record.service_type,
-        amount: record.amount || record.base_price || 0,
-        status: record.billing_status || "Pending",
-        date: formattedDate,
-        invoice_path: record.receipt_details,
-      };
-    });
-
-    return res.status(200).json({
-      records: formattedRecords,
-      totalOutstanding,
-    });
-  } catch (err) {
-    console.error("User Billings Error:", err);
-    return res.status(500).json({ message: "Error fetching bills" });
-  }
-});
-
-// ---------------------------------------------------------
-// GET BOOKED TIMES (SUPPORTS ARRAY & OBJECT RESPONSES)
-// ---------------------------------------------------------
-
-app.get("/api/booked-times", async (req, res) => {
-  const { date, dentist } = req.query;
-
-  if (!date || !dentist) {
-    return res.status(400).json({ message: "Date and dentist are required." });
-  }
-
-  try {
-    const { data: appointments, error } = await supabase
-      .from("appointments")
-      .select("appointment_time, service_type")
-      .eq("appointment_date", date)
-      .eq("dentist_name", dentist)
-      .neq("status", "Cancelled");
-
-    if (error) throw error;
-
-    const bookedTimes = (appointments || []).map((appointment) => ({
-      appointment_time: appointment.appointment_time,
-      time: appointment.appointment_time,
-      service_type: appointment.service_type,
-      service: appointment.service_type,
-    }));
-
-    // Return object with array fallback for 100% web & mobile client compatibility
-    return res.status(200).json({
-      bookedTimes: bookedTimes,
-    });
-  } catch (err) {
-    console.error("BOOKED TIMES SERVER ERROR:", err);
-    return res.status(500).json({ message: "Error fetching booked times" });
-  }
-});
-
-// ---------------------------------------------------------
-// BOOK APPOINTMENT (FIXED: INSERTS BASE PRICE & HANDLES ALIASES)
+// BOOK APPOINTMENT
 // ---------------------------------------------------------
 
 app.post("/api/book-appointment", async (req, res) => {
@@ -634,32 +432,12 @@ app.post("/api/book-appointment", async (req, res) => {
     !resolvedTime ||
     !branch
   ) {
-    return res.status(400).json({
-      message: "Missing required booking information.",
-    });
+    return res.status(400).json({ message: "Missing required booking information." });
   }
 
   try {
-    // 1. Check existing appointment collision
-    const { data: existingAppointments, error: existingError } = await supabase
-      .from("appointments")
-      .select("id, booking_ref, service_type, status")
-      .eq("appointment_date", resolvedDate)
-      .eq("appointment_time", resolvedTime)
-      .eq("dentist_name", resolvedDentist)
-      .neq("status", "Cancelled");
-
-    if (existingError) throw existingError;
-
-    if (existingAppointments && existingAppointments.length > 0) {
-      return res.status(409).json({
-        message: "This appointment time is already booked for the selected dentist.",
-      });
-    }
-
     const booking_ref = `OV - ${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
 
-    // 2. Insert with base price and amount included
     const { error: insertError } = await supabase.from("appointments").insert([
       {
         user_id: resolvedUserId,
@@ -685,14 +463,12 @@ app.post("/api/book-appointment", async (req, res) => {
     });
   } catch (err) {
     console.error("BOOKING SERVER ERROR:", err);
-    return res.status(500).json({
-      message: err?.message || "Server error while creating appointment.",
-    });
+    return res.status(500).json({ message: "Server error while creating appointment." });
   }
 });
 
 // ---------------------------------------------------------
-// GET USER APPOINTMENTS
+// APPOINTMENTS & STATUS UPDATES (TRIGGERS NOTIFICATIONS & EMAILS)
 // ---------------------------------------------------------
 
 app.get("/api/user-appointments/:userId", async (req, res) => {
@@ -704,7 +480,6 @@ app.get("/api/user-appointments/:userId", async (req, res) => {
       .order("appointment_date", { ascending: false });
 
     if (error) throw error;
-
     return res.status(200).json(results || []);
   } catch (err) {
     console.error("User Appointments Error:", err);
@@ -712,32 +487,229 @@ app.get("/api/user-appointments/:userId", async (req, res) => {
   }
 });
 
-// ---------------------------------------------------------
-// UPDATE APPOINTMENT STATUS
-// ---------------------------------------------------------
-
 app.put("/api/update-appointment-status", async (req, res) => {
   const { appointment_id, status } = req.body;
 
   try {
-    const { error } = await supabase
+    const { error: updateError } = await supabase
       .from("appointments")
       .update({ status })
       .eq("id", appointment_id);
 
-    if (error) throw error;
+    if (updateError) throw updateError;
 
-    return res.status(200).json({ message: "Appointment status updated!" });
+    if (status === "Confirmed") {
+      const { data: appts } = await supabase
+        .from("appointments")
+        .select("id, user_id, service_type, dentist_name, appointment_date, appointment_time, amount, base_price, branch")
+        .eq("id", appointment_id);
+
+      if (appts && appts.length > 0) {
+        const appt = appts[0];
+        const { data: users } = await supabase
+          .from("users")
+          .select("first_name, email")
+          .eq("id", appt.user_id);
+
+        const user = users?.[0];
+        const cost = Number(appt.amount || appt.base_price || 0).toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+
+        const title = "Appointment Confirmed";
+        const message = `Your ${appt.service_type} appointment with ${appt.dentist_name} on ${appt.appointment_date} at ${appt.appointment_time} has been confirmed. Base price: ₱${cost}.`;
+
+        await supabase.from("notifications").insert([
+          {
+            user_id: appt.user_id,
+            appointment_id: appt.id,
+            notification_type: "appointment_confirmed",
+            title: title,
+            message: message,
+            is_read: false,
+          },
+        ]);
+
+        if (user?.email) {
+          try {
+            await transporter.sendMail({
+              from: process.env.EMAIL_USER,
+              to: user.email,
+              subject: "OraVista - Appointment Confirmed",
+              html: `
+                <div style="font-family: Arial, sans-serif; padding: 20px; color: #001166;">
+                  <h2>King Epres Dental Clinic</h2>
+                  <p>Hello ${user.first_name},</p>
+                  <p>Your appointment has been confirmed!</p>
+                  <p><strong>Service:</strong> ${appt.service_type}</p>
+                  <p><strong>Base Price:</strong> ₱${cost}</p>
+                  <p><strong>Dentist:</strong> ${appt.dentist_name}</p>
+                  <p><strong>Date:</strong> ${appt.appointment_date}</p>
+                  <p><strong>Time:</strong> ${appt.appointment_time}</p>
+                  <p><strong>Branch:</strong> ${appt.branch || "Main Branch"}</p>
+                  <p>Status: <strong>Confirmed</strong></p>
+                </div>
+              `,
+            });
+          } catch (mailErr) {
+            console.error("Confirmation mail error:", mailErr);
+          }
+        }
+      }
+    }
+
+    return res.status(200).json({ message: `Appointment marked as ${status}!` });
   } catch (err) {
     console.error("Update Appointment Error:", err);
     return res.status(500).json({ message: "Server error." });
   }
 });
 
-// ---------------------------------------------------------
-// PATIENT RECORDS
-// ---------------------------------------------------------
+// Late / No Show route
+app.put("/api/appointments/:appointmentId/late-no-show", async (req, res) => {
+  const { appointmentId } = req.params;
 
+  try {
+    const { data: appts, error } = await supabase
+      .from("appointments")
+      .select("id, user_id, status, service_type, dentist_name, appointment_date, appointment_time")
+      .eq("id", appointmentId);
+
+    if (error || !appts || appts.length === 0) {
+      return res.status(404).json({ message: "Appointment not found." });
+    }
+
+    const appt = appts[0];
+
+    await supabase
+      .from("appointments")
+      .update({ status: "Late / No Show" })
+      .eq("id", appointmentId);
+
+    const { data: users } = await supabase
+      .from("users")
+      .select("first_name, email")
+      .eq("id", appt.user_id);
+
+    const user = users?.[0];
+    const title = "Appointment marked Late / No Show";
+    const message = `Your ${appt.service_type} appointment on ${appt.appointment_date} at ${appt.appointment_time} was marked Late / No Show. You may cancel it or request to reschedule.`;
+
+    await supabase.from("notifications").insert([
+      {
+        user_id: appt.user_id,
+        appointment_id: appt.id,
+        notification_type: "appointment_late_no_show",
+        title: title,
+        message: message,
+        is_read: false,
+      },
+    ]);
+
+    if (user?.email) {
+      try {
+        await transporter.sendMail({
+          from: process.env.EMAIL_USER,
+          to: user.email,
+          subject: "OraVista - Action needed for your appointment",
+          html: `
+            <div style="font-family: Arial, sans-serif; padding: 20px; color: #001166;">
+              <h2>King Epres Dental Clinic</h2>
+              <p>Hello ${user.first_name},</p>
+              <p>Your <strong>${appt.service_type}</strong> appointment on <strong>${appt.appointment_date} at ${appt.appointment_time}</strong> was marked Late / No Show.</p>
+              <p>Please open the OraVista app to cancel the appointment or request a new schedule.</p>
+            </div>
+          `,
+        });
+      } catch (mailErr) {
+        console.error("Late/No-Show mail error:", mailErr);
+      }
+    }
+
+    return res.status(200).json({ message: "Appointment marked Late / No Show." });
+  } catch (err) {
+    console.error("Late/No-Show error:", err);
+    return res.status(500).json({ message: "Failed to mark late/no-show." });
+  }
+});
+
+// Cancel appointment
+app.put("/api/appointments/:appointmentId/cancel", async (req, res) => {
+  const { user_id } = req.body || {};
+  const { appointmentId } = req.params;
+
+  try {
+    const { error } = await supabase
+      .from("appointments")
+      .update({ status: "Cancelled" })
+      .eq("id", appointmentId)
+      .eq("user_id", user_id);
+
+    if (error) throw error;
+    return res.status(200).json({ message: "Appointment cancelled." });
+  } catch (err) {
+    console.error("Cancellation error:", err);
+    return res.status(500).json({ message: "Failed to cancel appointment." });
+  }
+});
+
+// User Profile
+app.get("/api/user-profile", async (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.status(400).json({ message: "Email is required." });
+
+  try {
+    const { data: users, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", email);
+
+    if (error || !users || users.length === 0) return res.status(404).json({ message: "Not found" });
+
+    const user = users[0];
+    delete user.password;
+    return res.status(200).json(user);
+  } catch (err) {
+    return res.status(500).json({ message: "Error" });
+  }
+});
+
+// Billings
+app.get("/api/user-billings/:userId", async (req, res) => {
+  const { userId } = req.params;
+  try {
+    const { data: records, error } = await supabase
+      .from("appointments")
+      .select("id, service_type, amount, base_price, billing_status, appointment_date, receipt_details")
+      .eq("user_id", userId)
+      .order("appointment_date", { ascending: false });
+
+    if (error) throw error;
+
+    const totalOutstanding = (records || [])
+      .filter((r) => r.billing_status === "Pending")
+      .reduce((sum, r) => sum + Number(r.amount || r.base_price || 0), 0);
+
+    const formattedRecords = (records || []).map((record) => {
+      const d = new Date(record.appointment_date);
+      return {
+        id: record.id,
+        title: record.service_type,
+        amount: record.amount || record.base_price || 0,
+        status: record.billing_status || "Pending",
+        date: d.toLocaleDateString("en-US", { month: "long", day: "2-digit", year: "numeric" }),
+        invoice_path: record.receipt_details,
+      };
+    });
+
+    return res.status(200).json({ records: formattedRecords, totalOutstanding });
+  } catch (err) {
+    return res.status(500).json({ message: "Error fetching bills" });
+  }
+});
+
+// Patient Records
 app.get("/api/patient-records/:userId", async (req, res) => {
   try {
     const { data: records, error } = await supabase
@@ -747,55 +719,15 @@ app.get("/api/patient-records/:userId", async (req, res) => {
       .order("upload_date", { ascending: false });
 
     if (error) throw error;
-
     return res.status(200).json(records || []);
   } catch (err) {
-    console.error("Patient Records Error:", err);
     return res.status(500).json({ message: "Error" });
   }
 });
-
-// ---------------------------------------------------------
-// USER PROFILE
-// ---------------------------------------------------------
-
-app.get("/api/user-profile", async (req, res) => {
-  const { email } = req.query;
-
-  if (!email) {
-    return res.status(400).json({ message: "Email is required." });
-  }
-
-  try {
-    const { data: users, error } = await supabase
-      .from("users")
-      .select("*")
-      .eq("email", email);
-
-    if (error || !users || users.length === 0) {
-      return res.status(404).json({ message: "Not found" });
-    }
-
-    const user = users[0];
-    delete user.password;
-
-    return res.status(200).json(user);
-  } catch (err) {
-    console.error("User Profile Error:", err);
-    return res.status(500).json({ message: "Error" });
-  }
-});
-
-// ---------------------------------------------------------
-// SERVER
-// ---------------------------------------------------------
 
 const PORT = process.env.PORT || 5000;
-
 if (process.env.NODE_ENV !== "production") {
-  app.listen(PORT, "0.0.0.0", () =>
-    console.log(`OraVista Backend running on port ${PORT}`)
-  );
+  app.listen(PORT, "0.0.0.0", () => console.log(`OraVista Backend running on port ${PORT}`));
 }
 
 module.exports = app;
