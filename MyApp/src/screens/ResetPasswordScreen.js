@@ -44,12 +44,16 @@ export default function ResetPasswordScreen({ navigation, route }) {
         body: JSON.stringify({ email, newPassword }),
       });
 
+      const rawText = await response.text();
+      let data = {};
+      try { data = JSON.parse(rawText); } catch (e) {}
+
       if (response.ok) {
         Alert.alert("Success", "Your password has been reset securely!", [
           { text: "Login Now", onPress: () => navigation.navigate("Login") }
         ]);
       } else {
-        Alert.alert("Error", "Could not reset password. Try again.");
+        Alert.alert("Error", data.message || "Could not reset password. Try again.");
       }
     } catch (err) {
       Alert.alert("Error", "Server connection failed.");

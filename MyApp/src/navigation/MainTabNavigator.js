@@ -1,3 +1,4 @@
+import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -38,7 +39,16 @@ export default function MainTabNavigator() {
       <Tab.Screen name="Services" component={ServicesScreen} />
       <Tab.Screen name="Appointments" component={AppointmentsScreen} />
       <Tab.Screen name="Records" component={RecordsScreen} />
-      <Tab.Screen name="Profile" component={ProfileStackNavigator} />
+      <Tab.Screen
+        name="Profile"
+        component={ProfileStackNavigator}
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            // Reset to the root profile screen whenever tab is pressed
+            navigation.navigate("Profile", { screen: "Profile" });
+          },
+        })}
+      />
     </Tab.Navigator>
   );
 }

@@ -70,16 +70,26 @@ export default function LoginScreen({ navigation }) {
         }),
       });
 
-      const data = await response.json();
+      const rawText = await response.text();
+      let data = {};
+      try {
+        data = JSON.parse(rawText);
+      } catch (parseError) {
+        setPasswordError("Server returned an invalid response.");
+        setLoading(false);
+        return;
+      }
 
       if (response.ok) {
+        // server.js sends the OTP directly inside the login response
+        console.log("🔥 YOUR SECRET OTP IS:", data.generatedOtp);
+
         if (remember) {
           await AsyncStorage.setItem("rememberedEmail", email.trim().toLowerCase());
         } else {
           await AsyncStorage.removeItem("rememberedEmail");
         }
 
-        // Navigate and pass the OTP and User payload directly to the OtpVerification screen
         navigation.navigate("OtpVerification", { 
           email: email.trim().toLowerCase(), 
           rememberMe: remember,
@@ -94,7 +104,7 @@ export default function LoginScreen({ navigation }) {
       console.log("LOGIN ERROR:", error);
       Alert.alert(
         "Connection Error", 
-        "Make sure your PC and phone are on the same Wi-Fi and the backend is running."
+        "Make sure your server is running and reachable."
       );
     } finally {
       setLoading(false);

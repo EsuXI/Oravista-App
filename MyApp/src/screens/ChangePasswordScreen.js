@@ -76,52 +76,61 @@ export default function ChangePasswordScreen({ navigation }) {
 
   const handleRequestOtp = async () => {
     if (!validate()) return;
-    setSaving(true);
+    setLoading(true);
 
     try {
-      // Step 1: Verify current password with backend
-      const verifyRes = await fetch(`${API_BASE_URL}/api/verify-current-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: userId, password: currentPassword })
-      });
+      const userString = await AsyncStorage.getItem("userData");
+      const user = userString ? JSON.parse(userString) : null;
 
-      if (!verifyRes.ok) {
-        const errData = await verifyRes.json();
-        Alert.alert("Security Error", errData.message || "Current password incorrect.");
-        setSaving(false);
+      if (!user || !user.email) {
+        Alert.alert("Session Error", "Could not verify user account.");
+        setLoading(false);
         return;
       }
 
-      // Step 2: Request OTP with 'change' action parameter
-      const otpRes = await fetch(`${API_BASE_URL}/api/forgot-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          email: userEmail,
-          action: 'change' 
-        })
+      // Step 1: Verify current password against server
+      const verifyRes = await fetch(`${API_BASE_URL}/api/verify-current-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: user.id, password: currentPassword }),
       });
 
-      if (otpRes.ok) {
-        Alert.alert(
-          "Verification Required",
-          "A security code has been sent to your email to authorize this change.",
-          [{ 
-            text: "Verify Now", 
-            onPress: () => navigation.navigate("OtpVerification", { 
-              email: userEmail,
-              isChangePasswordFlow: true, 
-              newPassword: newPassword,
-              userId: userId
-            }) 
-          }]
-        );
+      const verifyRaw = await verifyRes.text();
+      let verifyData = {};
+      try { verifyData = JSON.parse(verifyRaw); } catch (e) {}
+
+      if (!verifyRes.ok) {
+        setErrors({ current: verifyData.message || "Incorrect current password" });
+        setLoading(false);
+        return;
       }
-    } catch (error) {
-      Alert.alert("Error", "Could not connect to the server.");
+
+      // Step 2: Request change-password OTP code
+      const otpRes = await fetch(`${API_BASE_URL}/api/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: user.email, action: "change" }),
+      });
+
+      const otpRaw = await otpRes.text();
+      let otpData = {};
+      try { otpData = JSON.parse(otpRaw); } catch (e) {}
+
+      if (otpRes.ok) {
+        navigation.navigate("OtpVerification", {
+          email: user.email,
+          user: user,
+          generatedOtp: otpData.generatedOtp,
+          isChangePasswordFlow: true,
+          newPassword: newPassword,
+        });
+      } else {
+        Alert.alert("Error", otpData.message || "Failed to send verification code.");
+      }
+    } catch (err) {
+      Alert.alert("Error", "Server connection failed.");
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
   };
 
