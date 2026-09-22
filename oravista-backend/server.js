@@ -800,7 +800,7 @@ app.get("/api/patient-records/:userId", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 5000;
-if (process.env.NODE_ENV !== "production") {
+if (!isVercel) {
   app.listen(PORT, "0.0.0.0", () => console.log(`OraVista Backend running on port ${PORT}`));
 }
 
