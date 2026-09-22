@@ -375,6 +375,61 @@ app.post("/api/register", async (req, res) => {
   }
 });
 
+// Web signup route
+app.post("/api/signup", async (req, res) => {
+  const { firstName, lastName, email, password, role, phone, dob, branch } = req.body;
+
+  if (firstName.length > 20 || lastName.length > 20) {
+    return res.status(400).json({ message: "Names must be 20 characters or less." });
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ message: "Invalid email format." });
+  }
+
+  try {
+    const { data: existingUsers, error: lookupError } = await supabase
+      .from("users")
+      .select("id")
+      .eq("email", email);
+
+    if (lookupError) throw lookupError;
+
+    if (existingUsers && existingUsers.length > 0) {
+      return res.status(400).json({ message: "Email already registered." });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const userRole = role || "patient";
+    const userBranch = branch || "Main Branch";
+
+    const { error } = await supabase
+      .from("users")
+      .insert([
+        {
+          first_name: firstName,
+          last_name: lastName,
+          email: email,
+          password: hashedPassword,
+          role: userRole,
+          phone: phone || null,
+          dob: dob || null,
+          branch: userBranch,
+        },
+      ]);
+
+    if (error) throw error;
+
+    return res.status(201).json({ message: "Account created successfully!" });
+  } catch (err) {
+    console.error("Signup Error:", err);
+    return res.status(500).json({ message: "Database error." });
+  }
+});
+
 // ---------------------------------------------------------
 // UPDATE PROFILE
 // ---------------------------------------------------------
