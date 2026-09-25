@@ -1,9 +1,12 @@
+import BrandLogo from '../components/BrandLogo';
+import ScreenBackground from '../components/ScreenBackground';
+import { colors } from '../theme/colors';
 import React, { useEffect, useRef } from "react";
 import { View, Text, StyleSheet, Animated, TouchableOpacity, Image } from "react-native";
 import { fonts } from "../theme/fonts";
 
 export default function SplashScreen({ navigation }) {
-  const fadeAnim = useRef(new Animated.Value(0)).current; 
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -14,25 +17,23 @@ export default function SplashScreen({ navigation }) {
   }, [fadeAnim]);
 
   return (
-    <TouchableOpacity 
-      style={styles.container} 
-      activeOpacity={1} 
-      onPress={() => navigation.replace("Landing")} 
+    <TouchableOpacity accessibilityRole="button"
+      style={styles.container}
+      activeOpacity={1}
+      onPress={() => navigation.replace("Landing")}
     >
+      <ScreenBackground />
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
-        
+
         {/* 🔹 YOUR OFFICIAL LOGO */}
         <View style={styles.logoWrapper}>
-          <Image 
-            source={require('../../assets/oravista_logo.png')}
-            style={styles.logoImage} 
-          />
+          <BrandLogo variant="stacked" width={200} />
         </View>
 
         <Text style={styles.subtitle}>Your Smile, Our Priority</Text>
-        
+
         <View style={styles.divider} />
-        
+
         <Text style={styles.clinic}>King Epres Dental Clinic</Text>
       </Animated.View>
 
@@ -47,7 +48,7 @@ export default function SplashScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F9FAFB", 
+    backgroundColor: colors.canvas,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -55,14 +56,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     width: "100%",
   },
-  
+
   logoWrapper: {
     marginBottom: 10,
     alignItems: "center",
     justifyContent: "center",
   },
   logoImage: {
-    width: 220, 
+    width: 220,
     height: 220,
     resizeMode: "contain",
   },
@@ -70,19 +71,19 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 15,
     fontFamily: fonts.medium,
-    color: "#6B7280",
-    marginTop: -10, // Pulls it slightly closer to the logo text
+    color: colors.muted,
+    marginTop: 20, // Pulls it slightly closer to the logo text
   },
   divider: {
     height: 2,
     width: 40,
-    backgroundColor: "#E5E7EB",
+    backgroundColor: colors.border,
     marginVertical: 26,
   },
   clinic: {
     fontSize: 13,
     fontFamily: fonts.bold,
-    color: "#001166", 
+    color: colors.accent,
     textTransform: 'uppercase',
     letterSpacing: 1.5
   },
@@ -94,7 +95,7 @@ const styles = StyleSheet.create({
   },
   tapText: {
     fontSize: 12,
-    color: "#9CA3AF",
+    color: colors.muted,
     fontFamily: fonts.medium,
     textTransform: 'uppercase',
     letterSpacing: 1,
@@ -102,7 +103,7 @@ const styles = StyleSheet.create({
   },
   version: {
     fontSize: 11,
-    color: "#D1D5DB",
+    color: colors.muted,
     fontFamily: fonts.regular
   },
 });

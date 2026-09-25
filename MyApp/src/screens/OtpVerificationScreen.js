@@ -1,3 +1,6 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ScreenBackground from '../components/ScreenBackground';
+import { colors } from '../theme/colors';
 import React, { useState, useRef, useEffect } from "react";
 import {
   View,
@@ -8,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -16,6 +20,7 @@ import { API_BASE_URL } from "../config/config";
 import CustomAlertModal from "../components/CustomAlertModal";
 
 export default function OtpVerificationScreen({ navigation, route }) {
+  const insets = useSafeAreaInsets();
   const email = route?.params?.email || "your email";
   const user = route?.params?.user || null;
   const isChangePasswordFlow = route?.params?.isChangePasswordFlow || false;
@@ -25,7 +30,7 @@ export default function OtpVerificationScreen({ navigation, route }) {
 
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [loading, setLoading] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(30);
+  const [resendCooldown, setResendCooldown] = useState(initialOtp ? 30 : 0);
   const [currentOtp, setCurrentOtp] = useState(initialOtp);
 
   // Custom Alert Modal State
@@ -209,13 +214,14 @@ export default function OtpVerificationScreen({ navigation, route }) {
         return;
       }
 
+      if (!user || !(user.id || user.user_id)) throw new Error('Your login session is missing. Please log in again.');
       // 3. Normal Login Session setup
       if (user) {
         await AsyncStorage.setItem("userData", JSON.stringify(user));
         await AsyncStorage.setItem("userEmail", email);
         if (user.token) {
           await AsyncStorage.setItem("userToken", user.token);
-        }
+        } else { await AsyncStorage.removeItem("userToken"); }
       }
 
       if (route?.params?.rememberMe) {
@@ -244,6 +250,8 @@ export default function OtpVerificationScreen({ navigation, route }) {
   const handleResend = async () => {
     if (loading || resendCooldown > 0) return;
     setLoading(true);
+    setCurrentOtp("");
+    setOtp(["", "", "", "", "", ""]);
 
     try {
       let actionType = "login";
@@ -309,18 +317,20 @@ export default function OtpVerificationScreen({ navigation, route }) {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.container}
     >
-      <View style={styles.premiumHeader}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+      <ScreenBackground />
+      <View style={[styles.premiumHeader, { paddingTop: insets.top + 20, overflow: "hidden" }]}><ScreenBackground header />
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={[styles.backBtn, { top: insets.top + 12, minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }]} onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={24} color={colors.ink} />
         </TouchableOpacity>
         <View style={styles.iconCircle}>
-          <Ionicons name="shield-checkmark" size={32} color="#001166" />
+          <Ionicons name="shield-checkmark" size={32} color={colors.accent} />
         </View>
         <Text style={styles.title}>Enter 6-Digit Code</Text>
-        <Text style={styles.subtitle}>Sent to {email}</Text>
+        <Text style={styles.subtitle}>{currentOtp ? `Sent to ${email}` : "Your email code hasn't been sent yet."}</Text>
       </View>
 
-      <View style={styles.content}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]} showsVerticalScrollIndicator={false}>
+        {!currentOtp && <Text accessibilityLiveRegion="polite" style={styles.deliveryNotice}>{loading ? 'Requesting your code…' : (route?.params?.deliveryError || 'Try Resend Code. If sending keeps failing, contact the clinic for help.')}</Text>}
         <View style={styles.otpRow}>
           {otp.map((digit, index) => (
             <TextInput
@@ -329,6 +339,9 @@ export default function OtpVerificationScreen({ navigation, route }) {
               style={[styles.otpBox, digit ? styles.otpBoxFilled : null]}
               keyboardType="number-pad"
               maxLength={6}
+              accessibilityLabel={`Verification code digit ${index + 1}`}
+              textContentType="oneTimeCode"
+              editable={!loading && !!currentOtp}
               value={digit}
               onChangeText={(text) => handleChange(text, index)}
               onKeyPress={(e) => handleKeyPress(e, index)}
@@ -336,9 +349,9 @@ export default function OtpVerificationScreen({ navigation, route }) {
           ))}
         </View>
 
-        <TouchableOpacity style={styles.verifyBtn} onPress={handleVerify} disabled={loading}>
+        <TouchableOpacity accessibilityRole="button" style={[styles.verifyBtn, (loading || !currentOtp || otp.join('').length !== 6) && { opacity: 0.5 }]} onPress={handleVerify} disabled={loading || !currentOtp || otp.join('').length !== 6}>
           {loading ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={colors.ink} />
           ) : (
             <Text style={styles.verifyText}>Verify & Proceed</Text>
           )}
@@ -346,13 +359,13 @@ export default function OtpVerificationScreen({ navigation, route }) {
 
         <View style={styles.resendRow}>
           <Text style={styles.resendPrompt}>Didn't receive the code? </Text>
-          <TouchableOpacity onPress={handleResend} disabled={loading || resendCooldown > 0}>
+          <TouchableOpacity accessibilityRole="button" onPress={handleResend} disabled={loading || resendCooldown > 0}>
             <Text style={[styles.resendLink, resendCooldown > 0 && styles.resendDisabled]}>
               {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend Code"}
             </Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
 
       <CustomAlertModal
         visible={alertConfig.visible}
@@ -366,9 +379,9 @@ export default function OtpVerificationScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#FFFFFF" },
+  container: { flex: 1, backgroundColor: colors.canvas },
   premiumHeader: {
-    backgroundColor: "#001166",
+    backgroundColor: colors.primary,
     paddingTop: 55,
     paddingBottom: 40,
     paddingHorizontal: 24,
@@ -387,7 +400,7 @@ const styles = StyleSheet.create({
     width: 68,
     height: 68,
     borderRadius: 34,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 16,
@@ -396,70 +409,75 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 22,
     fontFamily: fonts.bold,
-    color: "#FFFFFF",
+    color: colors.ink,
   },
   subtitle: {
     fontSize: 14,
     fontFamily: fonts.regular,
-    color: "#C7D2FF",
+    color: colors.muted,
     marginTop: 4,
   },
   content: {
     padding: 24,
     alignItems: "center",
-    marginTop: 20,
+    paddingTop: 32,
   },
+  deliveryNotice: { fontFamily: fonts.medium, fontSize: 13, lineHeight: 21, color: colors.danger, backgroundColor: colors.dangerSoft, padding: 14, borderRadius: 20, marginBottom: 20, width: '100%' },
   otpRow: {
+    gap: 6,
     flexDirection: "row",
     justifyContent: "space-between",
     width: "100%",
     marginBottom: 32,
   },
   otpBox: {
-    width: 48,
+    flex: 1,
+    minWidth: 0,
     height: 56,
     borderWidth: 1.5,
-    borderColor: "#D1D5DB",
+    borderColor: colors.border,
     borderRadius: 16,
     textAlign: "center",
     fontSize: 22,
     fontFamily: fonts.bold,
-    color: "#111827",
-    backgroundColor: "#F9FAFB",
+    color: colors.ink,
+    backgroundColor: colors.input,
   },
   otpBoxFilled: {
-    borderColor: "#001166",
-    backgroundColor: "#EEF2FF",
+    borderColor: colors.accent,
+    backgroundColor: colors.lavender,
   },
   verifyBtn: {
-    backgroundColor: "#001166",
+    backgroundColor: colors.primary,
     width: "100%",
     height: 52,
-    borderRadius: 22,
+    borderRadius: 999,
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 20,
   },
   verifyText: {
-    color: "#FFFFFF",
+    color: colors.ink,
     fontSize: 16,
     fontFamily: fonts.semiBold,
   },
   resendRow: {
+    flexWrap: 'wrap',
+    justifyContent: 'center',
     flexDirection: "row",
     alignItems: "center",
   },
   resendPrompt: {
     fontSize: 14,
-    color: "#6B7280",
+    color: colors.muted,
     fontFamily: fonts.regular,
   },
   resendLink: {
     fontSize: 14,
-    color: "#001166",
+    color: colors.accent,
     fontFamily: fonts.semiBold,
   },
   resendDisabled: {
-    color: "#9CA3AF",
+    color: colors.muted,
   },
 });

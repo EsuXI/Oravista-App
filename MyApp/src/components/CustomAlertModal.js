@@ -1,5 +1,6 @@
+import { colors } from '../theme/colors';
 import React from "react";
-import { View, Text, StyleSheet, Modal, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { fonts } from "../theme/fonts";
 
@@ -23,21 +24,22 @@ export default function CustomAlertModal({
       case "warning":
         return { name: "warning", color: "#F59E0B", bg: "#FFFBEB" };
       default:
-        return { name: "information-circle", color: "#001166", bg: "#EEF2FF" };
+        return { name: "information-circle", color: colors.accent, bg: colors.lavender };
     }
   };
 
   const icon = getIconConfig();
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onPrimaryPress}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onSecondaryPress || onPrimaryPress}>
       <View style={styles.overlay}>
-        <View style={styles.card}>
+        <View style={styles.card} accessibilityViewIsModal>
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ alignItems: 'center' }} showsVerticalScrollIndicator={false}>
           <View style={[styles.iconCircle, { backgroundColor: icon.bg }]}>
             <Ionicons name={icon.name} size={36} color={icon.color} />
           </View>
 
-          <Text style={styles.title}>{title}</Text>
+          <Text accessibilityRole="header" style={styles.title}>{title}</Text>
           {message ? <Text style={styles.message}>{message}</Text> : null}
 
           {details && details.length > 0 && (
@@ -61,15 +63,16 @@ export default function CustomAlertModal({
 
           <View style={styles.buttonRow}>
             {secondaryText && (
-              <TouchableOpacity style={styles.secondaryBtn} onPress={onSecondaryPress}>
+              <TouchableOpacity accessibilityRole="button" style={styles.secondaryBtn} onPress={onSecondaryPress}>
                 <Text style={styles.secondaryText}>{secondaryText}</Text>
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity style={styles.primaryBtn} onPress={onPrimaryPress}>
+            <TouchableOpacity accessibilityRole="button" style={styles.primaryBtn} onPress={onPrimaryPress}>
               <Text style={styles.primaryText}>{primaryText}</Text>
             </TouchableOpacity>
           </View>
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -86,12 +89,13 @@ const styles = StyleSheet.create({
   },
   card: {
     width: "100%",
-    backgroundColor: "#FFFFFF",
+    maxWidth: 480,
+    maxHeight: '85%',
+    backgroundColor: colors.surface,
     borderRadius: 28,
     padding: 24,
-    alignItems: "center",
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: colors.border,
   },
   iconCircle: {
     width: 68,
@@ -104,26 +108,26 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontFamily: fonts.bold,
-    color: "#111827",
+    color: colors.ink,
     textAlign: "center",
     marginBottom: 8,
   },
   message: {
     fontSize: 14,
     fontFamily: fonts.regular,
-    color: "#6B7280",
+    color: colors.muted,
     textAlign: "center",
     lineHeight: 20,
     marginBottom: 16,
   },
   detailsContainer: {
     width: "100%",
-    backgroundColor: "#F9FAFB",
+    backgroundColor: colors.input,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: "#EEF2FF",
+    borderColor: colors.lavender,
     marginBottom: 20,
   },
   detailRow: {
@@ -132,22 +136,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 9,
     borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6",
+    borderBottomColor: colors.aquaSoft,
   },
   detailLabel: {
     fontSize: 13,
     fontFamily: fonts.medium,
-    color: "#6B7280",
+    color: colors.muted,
   },
   detailValue: {
     fontSize: 13,
     fontFamily: fonts.semiBold,
-    color: "#111827",
+    color: colors.ink,
     maxWidth: "60%",
     textAlign: "right",
   },
   highlightText: {
-    color: "#001166",
+    color: colors.accent,
     fontFamily: fonts.bold,
   },
   buttonRow: {
@@ -157,28 +161,33 @@ const styles = StyleSheet.create({
   },
   secondaryBtn: {
     flex: 1,
-    backgroundColor: "#F3F4F6",
-    height: 50,
-    borderRadius: 22,
+    backgroundColor: colors.aquaSoft,
+    minHeight: 50,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 999,
     justifyContent: "center",
     alignItems: "center",
   },
   secondaryText: {
     fontSize: 14,
     fontFamily: fonts.semiBold,
-    color: "#4B5563",
+    color: colors.muted,
   },
   primaryBtn: {
     flex: 1.2,
-    backgroundColor: "#001166",
-    height: 50,
-    borderRadius: 22,
+    backgroundColor: colors.primary,
+    minHeight: 50,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 999,
     justifyContent: "center",
     alignItems: "center",
   },
   primaryText: {
+    textAlign: 'center',
     fontSize: 14,
     fontFamily: fonts.semiBold,
-    color: "#FFFFFF",
+    color: colors.ink,
   },
 });

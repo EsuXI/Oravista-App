@@ -1,3 +1,6 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ScreenBackground from '../components/ScreenBackground';
+import { colors } from '../theme/colors';
 import React, { useState } from "react";
 import {
   View,
@@ -16,6 +19,7 @@ import { fonts } from "../theme/fonts";
 import { API_BASE_URL } from "../config/config";
 
 export default function ResetPasswordScreen({ navigation, route }) {
+  const insets = useSafeAreaInsets();
   const email = route?.params?.email || "";
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -90,19 +94,20 @@ export default function ResetPasswordScreen({ navigation, route }) {
 
   return (
     <View style={styles.container}>
+      <ScreenBackground />
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-        <View style={styles.premiumHeader}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+        <View style={[styles.premiumHeader, { paddingTop: insets.top + 20, overflow: "hidden" }]}><ScreenBackground header />
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={[styles.backBtn, { top: insets.top + 12, minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }]} onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={24} color={colors.ink} />
           </TouchableOpacity>
           <View style={styles.iconCircle}>
-            <Ionicons name="key" size={32} color="#001166" />
+            <Ionicons name="key" size={32} color={colors.accent} />
           </View>
           <Text style={styles.title}>Create New Password</Text>
           <Text style={styles.subtitle}>For account: {email}</Text>
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           <View style={styles.form}>
             <Text style={styles.label}>New Password</Text>
             <PasswordInput
@@ -132,8 +137,8 @@ export default function ResetPasswordScreen({ navigation, route }) {
             />
             {errors.confirm && <Error text={errors.confirm} />}
 
-            <TouchableOpacity style={styles.saveBtn} onPress={handleResetPassword} disabled={loading}>
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Reset Password</Text>}
+            <TouchableOpacity accessibilityRole="button" style={styles.saveBtn} onPress={handleResetPassword} disabled={loading}>
+              {loading ? <ActivityIndicator color={colors.ink} /> : <Text style={styles.saveText}>Reset Password</Text>}
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -145,17 +150,17 @@ export default function ResetPasswordScreen({ navigation, route }) {
 function PasswordInput({ value, setValue, show, setShow, placeholder }) {
   return (
     <View style={styles.inputWrapper}>
-      <Ionicons name="lock-closed-outline" size={20} color="#9CA3AF" />
+      <Ionicons name="lock-closed-outline" size={20} color={colors.muted} />
       <TextInput
         placeholder={placeholder}
-        placeholderTextColor="#9CA3AF"
+        placeholderTextColor={colors.muted}
         secureTextEntry={!show}
         style={styles.input}
         value={value}
         onChangeText={setValue}
       />
-      <TouchableOpacity onPress={() => setShow(!show)} style={{ padding: 4 }}>
-        <Ionicons name={show ? "eye-off-outline" : "eye-outline"} size={20} color="#9CA3AF" />
+      <TouchableOpacity accessibilityLabel="Show or hide password" hitSlop={8} accessibilityRole="button" onPress={() => setShow(!show)} style={{ padding: 4 }}>
+        <Ionicons name={show ? "eye-off-outline" : "eye-outline"} size={20} color={colors.muted} />
       </TouchableOpacity>
     </View>
   );
@@ -167,7 +172,7 @@ function Rule({ label, valid }) {
       <Ionicons
         name={valid ? "checkmark-circle" : "ellipse-outline"}
         size={16}
-        color={valid ? "#059669" : "#9CA3AF"}
+        color={valid ? "#059669" : colors.muted}
       />
       <Text style={[styles.ruleText, valid && { color: "#059669", fontFamily: fonts.medium }]}>
         {label}
@@ -179,15 +184,15 @@ function Rule({ label, valid }) {
 const Error = ({ text }) => <Text style={styles.error}>{text}</Text>;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#FFFFFF" },
+  container: { flex: 1, backgroundColor: colors.canvas },
   premiumHeader: {
-    backgroundColor: "#001166",
+    backgroundColor: colors.primary,
     paddingTop: 80,
     paddingBottom: 40,
     alignItems: "center",
     borderBottomLeftRadius: 40,
     borderBottomRightRadius: 40,
-    elevation: 10,
+    elevation: 3,
     position: "relative",
   },
   backBtn: { position: "absolute", top: 50, left: 20, padding: 8, zIndex: 10 },
@@ -195,45 +200,45 @@ const styles = StyleSheet.create({
     width: 70,
     height: 70,
     borderRadius: 22,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 20,
   },
-  title: { color: "#FFFFFF", fontSize: 24, fontFamily: fonts.bold },
-  subtitle: { color: "#C7D2FF", fontSize: 13, fontFamily: fonts.medium, marginTop: 6 },
-  scrollContent: { paddingBottom: 40 },
-  form: { paddingHorizontal: 30, paddingTop: 40 },
-  label: { fontSize: 13, fontFamily: fonts.bold, color: "#374151", marginBottom: 8, marginLeft: 4 },
+  title: { color: colors.ink, fontSize: 24, fontFamily: fonts.bold },
+  subtitle: { color: colors.muted, fontSize: 13, fontFamily: fonts.medium, marginTop: 6 },
+  scrollContent: { paddingBottom: 40 , maxWidth: 680, width: '100%', alignSelf: 'center' },
+  form: { paddingHorizontal: 30, paddingTop: 40 , maxWidth: 680, width: '100%', alignSelf: 'center' },
+  label: { fontSize: 13, fontFamily: fonts.bold, color: colors.ink, marginBottom: 8, marginLeft: 4 },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F9FAFB",
+    backgroundColor: colors.input,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: colors.border,
     borderRadius: 16,
     paddingHorizontal: 16,
     height: 56,
   },
-  input: { flex: 1, marginLeft: 12, fontFamily: fonts.medium, color: "#111827", fontSize: 15 },
+  input: { flex: 1, marginLeft: 12, fontFamily: fonts.medium, color: colors.ink, fontSize: 15 },
   error: { color: "#DC2626", fontSize: 12, marginTop: 4, marginLeft: 8, fontFamily: fonts.medium },
   rulesBox: {
-    backgroundColor: "#F0F4FF",
+    backgroundColor: colors.aquaSoft,
     borderRadius: 16,
     padding: 16,
     marginTop: 12,
     borderWidth: 1,
-    borderColor: "#C7D2FF",
+    borderColor: colors.border,
   },
   ruleRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
-  ruleText: { marginLeft: 8, fontSize: 12, color: "#6B7280", fontFamily: fonts.regular },
+  ruleText: { marginLeft: 8, fontSize: 12, color: colors.muted, fontFamily: fonts.regular },
   saveBtn: {
-    backgroundColor: "#001166",
+    backgroundColor: colors.primary,
     height: 58,
     borderRadius: 999,
     justifyContent: "center",
     alignItems: "center",
     marginTop: 32,
   },
-  saveText: { color: "#fff", fontSize: 16, fontFamily: fonts.bold },
+  saveText: { color: colors.ink, fontSize: 16, fontFamily: fonts.bold },
 });

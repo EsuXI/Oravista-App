@@ -1,3 +1,8 @@
+import { fileUrl } from '../utils/patientData';
+import { API_BASE_URL } from '../config/config';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ScreenBackground from '../components/ScreenBackground';
+import { colors } from '../theme/colors';
 import React, { useState, useCallback } from "react";
 import {
   View,
@@ -7,6 +12,7 @@ import {
   TouchableOpacity,
   Image,
   StatusBar,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
@@ -15,6 +21,7 @@ import { fonts } from "../theme/fonts";
 import CustomAlertModal from "../components/CustomAlertModal";
 
 export default function ProfileScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const [user, setUser] = useState(null);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
 
@@ -37,13 +44,10 @@ export default function ProfileScreen({ navigation }) {
 
   const handleLogout = async () => {
     setLogoutModalVisible(false);
-    await AsyncStorage.removeItem("userToken");
-    await AsyncStorage.removeItem("userData");
-    await AsyncStorage.removeItem("userEmail");
-    navigation.reset({
-      index: 0,
-      routes: [{ name: "Login" }],
-    });
+    try {
+      await AsyncStorage.multiRemove(['userToken', 'userData', 'userEmail', 'rememberMe']);
+      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+    } catch { Alert.alert('Could not log out', 'Your device could not clear the saved session. Please try again.'); }
   };
 
   const fullName = user
@@ -51,20 +55,21 @@ export default function ProfileScreen({ navigation }) {
     : "User Profile";
 
   const avatarUrl =
-    user?.profile_pic || user?.profile_image || user?.profileImage || null;
+    fileUrl(user?.profile_picture || user?.profile_pic || user?.profile_image || user?.profileImage, API_BASE_URL);
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#001166" />
+      <ScreenBackground />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.primary} />
 
       {/* Curved Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 20, overflow: "hidden" }]}><ScreenBackground header />
         <View style={styles.avatarWrapper}>
           {avatarUrl ? (
             <Image source={{ uri: avatarUrl }} style={styles.avatar} />
           ) : (
             <View style={styles.placeholderAvatar}>
-              <Ionicons name="person" size={48} color="#9CA3AF" />
+              <Ionicons name="person" size={48} color={colors.muted} />
             </View>
           )}
         </View>
@@ -72,7 +77,7 @@ export default function ProfileScreen({ navigation }) {
         <Text style={styles.userEmail}>{user?.email || ""}</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Account Section */}
         <Text style={styles.sectionHeader}>Account</Text>
         <View style={styles.menuSection}>
@@ -116,7 +121,7 @@ export default function ProfileScreen({ navigation }) {
         </View>
 
         {/* Logout Button */}
-        <TouchableOpacity style={styles.logoutBtn} onPress={() => setLogoutModalVisible(true)}>
+        <TouchableOpacity accessibilityRole="button" style={styles.logoutBtn} onPress={() => setLogoutModalVisible(true)}>
           <Ionicons name="log-out-outline" size={20} color="#EF4444" style={{ marginRight: 8 }} />
           <Text style={styles.logoutText}>Log Out</Text>
         </TouchableOpacity>
@@ -139,27 +144,27 @@ export default function ProfileScreen({ navigation }) {
 
 function MenuItem({ icon, title, subtitle, onPress, isLast = false }) {
   return (
-    <TouchableOpacity
+    <TouchableOpacity accessibilityRole="button"
       style={[styles.menuItem, isLast && styles.noBorder]}
       onPress={onPress}
       activeOpacity={0.7}
     >
       <View style={styles.menuIconBox}>
-        <Ionicons name={icon} size={22} color="#001166" />
+        <Ionicons name={icon} size={22} color={colors.accent} />
       </View>
       <View style={styles.menuTextContainer}>
         <Text style={styles.menuTitle}>{title}</Text>
         {subtitle ? <Text style={styles.menuSubtitle}>{subtitle}</Text> : null}
       </View>
-      <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+      <Ionicons name="chevron-forward" size={18} color={colors.muted} />
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F9FAFB" },
+  container: { flex: 1, backgroundColor: colors.canvas },
   header: {
-    backgroundColor: "#001166",
+    backgroundColor: colors.primary,
     paddingTop: 55,
     paddingBottom: 32,
     alignItems: "center",
@@ -171,7 +176,7 @@ const styles = StyleSheet.create({
     height: 96,
     borderRadius: 48,
     borderWidth: 3,
-    borderColor: "#FFFFFF",
+    borderColor: colors.surface,
     overflow: "hidden",
     marginBottom: 12,
   },
@@ -179,17 +184,17 @@ const styles = StyleSheet.create({
   placeholderAvatar: {
     width: "100%",
     height: "100%",
-    backgroundColor: "#E5E7EB",
+    backgroundColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
   },
   userName: {
-    color: "#FFFFFF",
+    color: colors.ink,
     fontSize: 20,
     fontFamily: fonts.bold,
   },
   userEmail: {
-    color: "#C7D2FF",
+    color: colors.muted,
     fontSize: 13,
     fontFamily: fonts.regular,
     marginTop: 4,
@@ -198,19 +203,19 @@ const styles = StyleSheet.create({
   sectionHeader: {
     fontSize: 13,
     fontFamily: fonts.semiBold,
-    color: "#6B7280",
+    color: colors.muted,
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: 8,
     marginLeft: 4,
   },
   menuSection: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
+    backgroundColor: colors.surface,
+    borderRadius: 28,
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: colors.border,
     marginBottom: 20,
   },
   menuItem: {
@@ -219,7 +224,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 6,
     borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6",
+    borderBottomColor: colors.aquaSoft,
   },
   noBorder: {
     borderBottomWidth: 0,
@@ -228,14 +233,14 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 16,
-    backgroundColor: "#EEF2FF",
+    backgroundColor: colors.lavender,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 14,
   },
   menuTextContainer: { flex: 1 },
-  menuTitle: { fontSize: 15, fontFamily: fonts.semiBold, color: "#111827" },
-  menuSubtitle: { fontSize: 12, fontFamily: fonts.regular, color: "#6B7280", marginTop: 2 },
+  menuTitle: { fontSize: 15, fontFamily: fonts.semiBold, color: colors.ink },
+  menuSubtitle: { fontSize: 12, fontFamily: fonts.regular, color: colors.muted, marginTop: 2 },
   logoutBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -244,7 +249,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#FCA5A5",
     height: 54,
-    borderRadius: 26,
+    borderRadius: 999,
     marginTop: 8,
   },
   logoutText: { color: "#EF4444", fontSize: 15, fontFamily: fonts.semiBold },

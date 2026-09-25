@@ -1,19 +1,23 @@
+import { loadBillings, fileUrl, money } from '../utils/patientData';
+import LoadError from '../components/LoadError';
+import ScreenBackground from '../components/ScreenBackground';
+import { colors } from '../theme/colors';
 import React, { useState, useCallback } from "react";
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TouchableOpacity, 
-  ScrollView, 
-  TextInput, 
-  ActivityIndicator, 
-  Linking 
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  TextInput,
+  ActivityIndicator,
+  Linking
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { fonts } from "../theme/fonts";
-import ScreenHeader from "../components/ScreenHeader"; 
+import ScreenHeader from "../components/ScreenHeader";
 import CustomAlertModal from "../components/CustomAlertModal";
 import { API_BASE_URL } from "../config/config";
 
@@ -24,7 +28,8 @@ export default function BillingsScreen({ navigation }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeStatus, setActiveStatus] = useState("All");
   const [loading, setLoading] = useState(true);
-  const [outstanding, setOutstanding] = useState(0);
+  const [outstanding, setOutstanding] = useState(null);
+  const [loadError, setLoadError] = useState('');
 
   // Custom Alert Modal State
   const [alertConfig, setAlertConfig] = useState({
@@ -38,73 +43,19 @@ export default function BillingsScreen({ navigation }) {
 
   const fetchBillings = async () => {
     setLoading(true);
+    setLoadError('');
+    setOutstanding(null);
     try {
-      let userId = null;
-      const storedUser = await AsyncStorage.getItem("userData");
-      if (storedUser) {
-        const parsed = JSON.parse(storedUser);
-        userId = parsed?.id || parsed?.user_id;
-      }
-
-      if (!userId) {
-        setBillings([]);
-        setOutstanding(0);
-        setLoading(false);
-        return;
-      }
-
-      // Safe fetch that checks Content-Type before parsing JSON
-      const response = await fetch(`${API_BASE_URL}/api/user-billings/${userId}`);
-      const contentType = response.headers.get("content-type") || "";
-
-      if (contentType.includes("application/json")) {
-        const data = await response.json();
-        if (response.ok) {
-          setBillings(data.records || []);
-          setOutstanding(data.totalOutstanding || 0);
-        } else {
-          setBillings([]);
-          setOutstanding(0);
-        }
-      } else {
-        // Fallback: If Cloud Run server doesn't have /api/user-billings, synthesize from appointments
-        const apptRes = await fetch(`${API_BASE_URL}/api/user-appointments/${userId}`);
-        const apptContentType = apptRes.headers.get("content-type") || "";
-
-        if (apptContentType.includes("application/json")) {
-          const apptData = await apptRes.json();
-          const records = Array.isArray(apptData) ? apptData : apptData.appointments || [];
-
-          const formattedRecords = records.map((record) => {
-            const d = new Date(record.appointment_date);
-            return {
-              id: record.id,
-              title: record.service_type,
-              amount: record.amount || record.base_price || 0,
-              status: record.billing_status || record.status || "Pending",
-              date: d.toLocaleDateString("en-US", { month: "long", day: "2-digit", year: "numeric" }),
-              invoice_path: record.receipt_details,
-            };
-          });
-
-          const totalOutstanding = formattedRecords
-            .filter((r) => (r.status || "").toLowerCase() === "pending")
-            .reduce((sum, r) => sum + Number(r.amount || 0), 0);
-
-          setBillings(formattedRecords);
-          setOutstanding(totalOutstanding);
-        } else {
-          setBillings([]);
-          setOutstanding(0);
-        }
-      }
+      const stored = await AsyncStorage.getItem('userData');
+      const user = stored ? JSON.parse(stored) : null;
+      const id = user?.id || user?.user_id;
+      if (!id) throw new Error('Could not identify your account. Please log in again.');
+      const data = await loadBillings(API_BASE_URL, id);
+      setBillings(data.records);
+      setOutstanding(data.totalOutstanding);
     } catch (error) {
-      console.log("Failed to fetch billings:", error);
-      setBillings([]);
-      setOutstanding(0);
-    } finally {
-      setLoading(false);
-    }
+      setLoadError(error.message || 'Unable to load billing records. Please try again.');
+    } finally { setLoading(false); }
   };
 
   useFocusEffect(
@@ -116,8 +67,8 @@ export default function BillingsScreen({ navigation }) {
   const filteredBillings = billings.filter((bill) => {
     const matchesStatus = activeStatus === "All" || (bill.status || "").toLowerCase() === activeStatus.toLowerCase();
     const searchLower = searchQuery.toLowerCase();
-    
-    const matchesSearch = 
+
+    const matchesSearch =
       (bill.id || "").toString().toLowerCase().includes(searchLower) ||
       (bill.title || "").toLowerCase().includes(searchLower);
 
@@ -125,7 +76,8 @@ export default function BillingsScreen({ navigation }) {
   });
 
   const handleDownload = (path) => {
-    if (!path) {
+    const url = fileUrl(path, API_BASE_URL);
+    if (!url) {
       setAlertConfig({
         visible: true,
         type: "info",
@@ -136,9 +88,8 @@ export default function BillingsScreen({ navigation }) {
       });
       return;
     }
-    
-    const fileUrl = path.startsWith("http") ? path : `${API_BASE_URL}/${path}`;
-    Linking.openURL(fileUrl).catch(() => {
+
+    Linking.openURL(url).catch(() => {
       setAlertConfig({
         visible: true,
         type: "error",
@@ -154,54 +105,55 @@ export default function BillingsScreen({ navigation }) {
     setAlertConfig({
       visible: true,
       type: "info",
-      title: "Invoice Summary",
+      title: "Billing Summary",
       message: "",
       details: [
-        { label: "Invoice No.", value: `INV-${(bill.id || 0).toString().padStart(3, "0")}` },
+        { label: "Record ID", value: String(bill.id ?? "Not provided") },
         { label: "Procedure", value: bill.title || "Dental Treatment" },
-        { label: "Amount", value: `₱${parseFloat(bill.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, highlight: true },
-        { label: "Status", value: bill.status || "Pending" },
+        { label: "Amount", value: money(bill.amount), highlight: true },
+        { label: "Status", value: bill.status || "Not provided" },
         { label: "Date", value: bill.date || "N/A" },
       ],
       onPrimaryPress: () => setAlertConfig((prev) => ({ ...prev, visible: false })),
     });
   };
-  
+
   return (
     <View style={styles.container}>
-      <ScreenHeader 
-        title="Billings" 
-        showBack={true} 
-        onBackPress={() => navigation.goBack()} 
+      <ScreenBackground />
+      <ScreenHeader
+        title="Billings"
+        showBack={true}
+        onBackPress={() => navigation.goBack()}
       />
 
       <View style={styles.balanceCard}>
         <View style={styles.balanceInfo}>
           <Text style={styles.balanceLabel}>Outstanding Balance</Text>
           <Text style={styles.balanceAmount}>
-            ₱{parseFloat(outstanding || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            {loading ? "Loading…" : money(outstanding)}
           </Text>
         </View>
         <View style={styles.balanceIconContainer}>
-          <Ionicons name="wallet" size={24} color="#001166" />
+          <Ionicons name="wallet" size={24} color={colors.accent} />
         </View>
       </View>
 
       <View style={styles.controlsWrapper}>
         <View style={styles.searchContainer}>
-          <Ionicons name="search-outline" size={18} color="#9CA3AF" />
-          <TextInput
+          <Ionicons name="search-outline" size={18} color={colors.muted} />
+          <TextInput accessibilityLabel="Search record or treatment..."
             style={styles.searchInput}
-            placeholder="Search invoice or treatment..."
+            placeholder="Search record or treatment..."
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={colors.muted}
           />
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
+        <ScrollView keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
           {STATUS_FILTERS.map((status) => (
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button"
               key={status}
               style={[styles.filterChip, activeStatus === status && styles.activeFilterChip]}
               onPress={() => setActiveStatus(status)}
@@ -216,18 +168,18 @@ export default function BillingsScreen({ navigation }) {
 
       {loading ? (
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#001166" />
+          <ActivityIndicator size="large" color={colors.accent} />
         </View>
-      ) : (
-        <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+      ) : loadError ? (<LoadError message={loadError} onRetry={fetchBillings} />) : (
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
           {filteredBillings.length === 0 ? (
             <View style={styles.centerContainer}>
-              <Ionicons name="receipt-outline" size={60} color="#E5E7EB" />
+              <Ionicons name="receipt-outline" size={60} color={colors.muted} />
               <Text style={styles.emptyText}>No billing records found.</Text>
             </View>
           ) : (
             filteredBillings.map((bill) => (
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button"
                 key={bill.id}
                 style={styles.card}
                 onPress={() => showBillDetails(bill)}
@@ -235,10 +187,10 @@ export default function BillingsScreen({ navigation }) {
               >
                 <View style={styles.cardTop}>
                   <View style={styles.idBox}>
-                    <Text style={styles.invoice}>INV-{(bill.id || 0).toString().padStart(3, "0")}</Text>
+                    <Text style={styles.invoice}>Record #{bill.id ?? "—"}</Text>
                   </View>
-                  <TouchableOpacity style={styles.downloadBtn} onPress={() => handleDownload(bill.invoice_path)}>
-                    <Ionicons name="download-outline" size={16} color="#001166" />
+                  <TouchableOpacity accessibilityLabel="Download document" hitSlop={8} accessibilityRole="button" style={styles.downloadBtn} onPress={(event) => { event.stopPropagation(); handleDownload(bill.invoice_path); }}>
+                    <Ionicons name="download-outline" size={16} color={colors.accent} />
                   </TouchableOpacity>
                 </View>
 
@@ -247,11 +199,11 @@ export default function BillingsScreen({ navigation }) {
 
                 <View style={styles.cardBottom}>
                   <Text style={styles.amount}>
-                    ₱{parseFloat(bill.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    {money(bill.amount)}
                   </Text>
                   <View style={[styles.statusBadge, (bill.status || "").toLowerCase() === "paid" ? styles.paidBg : styles.pendingBg]}>
                     <Text style={[styles.statusText, (bill.status || "").toLowerCase() === "paid" ? styles.paidText : styles.pendingText]}>
-                      {bill.status || "Pending"}
+                      {bill.status || "Not provided"}
                     </Text>
                   </View>
                 </View>
@@ -275,32 +227,32 @@ export default function BillingsScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F9FAFB" },
+  container: { flex: 1, backgroundColor: colors.canvas },
   centerContainer: { flex: 1, alignItems: "center", justifyContent: "center", marginTop: 60 },
-  emptyText: { fontSize: 14, color: "#9CA3AF", fontFamily: fonts.medium, marginTop: 12 },
-  balanceCard: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#FFFFFF", marginHorizontal: 20, marginTop: 20, padding: 24, borderRadius: 28, borderWidth: 1, borderColor: "#E5E7EB", elevation: 3 },
+  emptyText: { fontSize: 14, color: colors.muted, fontFamily: fonts.medium, marginTop: 12 },
+  balanceCard: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: colors.surface, marginHorizontal: 20, marginTop: 20, padding: 24, borderRadius: 28, borderWidth: 1, borderColor: colors.border, elevation: 3 },
   balanceInfo: { flex: 1 },
-  balanceLabel: { fontSize: 11, color: "#6B7280", fontFamily: fonts.bold, textTransform: "uppercase", letterSpacing: 1 },
-  balanceAmount: { fontSize: 28, color: "#111827", fontFamily: fonts.bold, marginTop: 4 },
-  balanceIconContainer: { width: 56, height: 56, borderRadius: 18, backgroundColor: "#EEF2FF", justifyContent: "center", alignItems: "center" },
+  balanceLabel: { fontSize: 11, color: colors.muted, fontFamily: fonts.bold, textTransform: "uppercase", letterSpacing: 1 },
+  balanceAmount: { fontSize: 28, color: colors.ink, fontFamily: fonts.bold, marginTop: 4 },
+  balanceIconContainer: { width: 56, height: 56, borderRadius: 18, backgroundColor: colors.lavender, justifyContent: "center", alignItems: "center" },
   controlsWrapper: { paddingVertical: 12 },
-  searchContainer: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFFFFF", marginHorizontal: 20, paddingHorizontal: 16, height: 50, borderRadius: 20, borderWidth: 1, borderColor: "#E5E7EB" },
-  searchInput: { flex: 1, marginLeft: 10, fontFamily: fonts.regular, fontSize: 14, color: "#111827" },
+  searchContainer: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, marginHorizontal: 20, paddingHorizontal: 16, height: 50, borderRadius: 20, borderWidth: 1, borderColor: colors.border },
+  searchInput: { flex: 1, marginLeft: 10, fontFamily: fonts.regular, fontSize: 14, color: colors.ink },
   filterScroll: { paddingHorizontal: 20, gap: 10, marginTop: 14 },
-  filterChip: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 999, borderWidth: 1, borderColor: "#E5E7EB", backgroundColor: "#FFFFFF" },
-  activeFilterChip: { backgroundColor: "#001166", borderColor: "#001166" },
-  filterText: { fontFamily: fonts.medium, fontSize: 13, color: "#6B7280" },
-  activeFilterText: { color: "#FFFFFF" },
+  filterChip: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+  activeFilterChip: { backgroundColor: colors.primary, borderColor: colors.accent },
+  filterText: { fontFamily: fonts.medium, fontSize: 13, color: colors.muted },
+  activeFilterText: { color: colors.ink },
   list: { padding: 20, paddingTop: 0, paddingBottom: 40 },
-  card: { backgroundColor: "#FFFFFF", borderRadius: 24, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: "#E5E7EB", elevation: 2 },
+  card: { backgroundColor: colors.surface, borderRadius: 28, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: colors.border, elevation: 2 },
   cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  idBox: { backgroundColor: "#F3F4F6", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
-  invoice: { fontSize: 10, color: "#6B7280", fontFamily: fonts.bold },
-  downloadBtn: { width: 36, height: 36, borderRadius: 14, backgroundColor: "#EEF2FF", alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 17, fontFamily: fonts.bold, color: "#111827" },
-  date: { fontSize: 12, color: "#9CA3AF", fontFamily: fonts.medium, marginTop: 4 },
+  idBox: { backgroundColor: colors.aquaSoft, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
+  invoice: { fontSize: 10, color: colors.muted, fontFamily: fonts.bold },
+  downloadBtn: { width: 44, height: 44, borderRadius: 999, backgroundColor: colors.lavender, alignItems: "center", justifyContent: "center" },
+  title: { fontSize: 17, fontFamily: fonts.bold, color: colors.ink },
+  date: { fontSize: 12, color: colors.muted, fontFamily: fonts.medium, marginTop: 4 },
   cardBottom: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 18 },
-  amount: { fontSize: 18, fontFamily: fonts.bold, color: "#111827" },
+  amount: { fontSize: 18, fontFamily: fonts.bold, color: colors.ink },
   statusBadge: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 999, minWidth: 80, alignItems: "center" },
   paidBg: { backgroundColor: "#D1FAE5" },
   pendingBg: { backgroundColor: "#FEF3C7" },

@@ -1,6 +1,9 @@
 import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { colors } from '../theme/colors';
+import { fonts } from '../theme/fonts';
 
 import HomeScreen from "../screens/HomeScreen";
 import ServicesScreen from "../screens/ServicesScreen";
@@ -11,18 +14,27 @@ import ProfileStackNavigator from "./ProfileStackNavigator";
 const Tab = createBottomTabNavigator();
 
 export default function MainTabNavigator() {
+  const insets = useSafeAreaInsets();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarActiveTintColor: "#fff",
-        tabBarInactiveTintColor: "#c7d2ff",
+        tabBarActiveTintColor: colors.ink,
+        tabBarInactiveTintColor: colors.muted,
+        tabBarActiveBackgroundColor: colors.aquaSoft,
+        tabBarHideOnKeyboard: true,
+        tabBarLabelStyle: { fontFamily: fonts.semiBold, fontSize: 10 },
+        tabBarItemStyle: { borderRadius: 22, marginHorizontal: 3, paddingVertical: 5 },
         tabBarStyle: {
-          backgroundColor: "#001166",
-          height: 60,
-          paddingBottom: 5,
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
+          height: 66 + Math.max(insets.bottom, 8),
+          paddingBottom: Math.max(insets.bottom, 8),
+          paddingTop: 8,
+          paddingHorizontal: 6,
+          elevation: 0,
         },
-        tabBarIcon: ({ color, size }) => {
+        tabBarIcon: ({ color, focused }) => {
           let iconName;
 
           if (route.name === "Home") iconName = "home-outline";
@@ -31,13 +43,13 @@ export default function MainTabNavigator() {
           else if (route.name === "Records") iconName = "document-text-outline";
           else if (route.name === "Profile") iconName = "person-outline";
 
-          return <Ionicons name={iconName} size={22} color={color} />;
+          return <Ionicons name={focused ? iconName.replace('-outline', '') : iconName} size={21} color={color} />;
         },
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Services" component={ServicesScreen} />
-      <Tab.Screen name="Appointments" component={AppointmentsScreen} />
+      <Tab.Screen name="Appointments" component={AppointmentsScreen} options={{ tabBarLabel: 'Visits' }} />
       <Tab.Screen name="Records" component={RecordsScreen} />
       <Tab.Screen
         name="Profile"
@@ -45,7 +57,7 @@ export default function MainTabNavigator() {
         listeners={({ navigation }) => ({
           tabPress: (e) => {
             // Reset to the root profile screen whenever tab is pressed
-            navigation.navigate("Profile", { screen: "Profile" });
+            navigation.navigate("Profile", { screen: "ProfileMain" });
           },
         })}
       />

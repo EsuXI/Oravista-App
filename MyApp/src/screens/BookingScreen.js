@@ -1,4 +1,10 @@
-import React, { useState, useMemo, useEffect } from "react";
+import { BRANCHES, DENTISTS_BY_BRANCH, SERVICE_CATEGORIES } from '../data/clinicCatalog';
+import { requestJson, requireArray, clinicDate, dateKey, timeMinutes } from '../utils/patientData';
+import LoadError from '../components/LoadError';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ScreenBackground from '../components/ScreenBackground';
+import { colors } from '../theme/colors';
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -16,48 +22,6 @@ import ScreenHeader from "../components/ScreenHeader";
 import CustomAlertModal from "../components/CustomAlertModal";
 import { API_BASE_URL } from "../config/config";
 
-const BRANCHES = ["Gil Puyat, Pasay", "Sta. Ana", "Angeles"];
-
-const DENTISTS_BY_BRANCH = {
-  "Gil Puyat, Pasay": [
-    "Auto-assigned",
-    "Queenie Balmedina DMD",
-    "Therese Madrid DMD",
-    "Vicente Epres II DMD",
-    "Carl Adrian Usi DMD",
-  ],
-  "Sta. Ana": [
-    "Auto-assigned",
-    "Queenie Balmedina DMD",
-    "Vicente Epres II DMD",
-    "Carl Adrian Usi DMD",
-  ],
-  Angeles: [
-    "Auto-assigned",
-    "Paulette Malit DMD",
-  ],
-};
-
-const SERVICE_CATEGORIES = {
-  "General Dentistry": [
-    { name: "Oral Prophylaxis", duration: 30, price: "Starts ₱500" },
-    { name: "Restoration", duration: 60, price: "Starts ₱500" },
-    { name: "Extraction", duration: 60, price: "Starts ₱700" },
-  ],
-  "Orthodontics (Braces, Veneers)": [
-    { name: "Orthodontics Installation", duration: 60, price: "₱4,000 DP" },
-    { name: "Orthodontics Adjustment", duration: 30, price: "₱1,000" },
-    { name: "Veneers / Esthetics", duration: 120, price: "Starts ₱3,500" },
-  ],
-  "Restorative Treatments": [
-    { name: "Root Canal Treatment", duration: 120, price: "Case to Case" },
-    { name: "Wisdom Tooth Surgery", duration: 180, price: "Case to Case" },
-    { name: "Dentures", duration: 30, price: "Case to Case" },
-    { name: "Fixed Bridge", duration: 120, price: "Starts ₱3,500" },
-    { name: "Whitening", duration: 90, price: "Case to Case" },
-  ],
-};
-
 const parseNumericBasePrice = (priceStr) => {
   if (!priceStr) return 0;
   const match = priceStr.replace(/,/g, "").match(/\d+/);
@@ -65,7 +29,7 @@ const parseNumericBasePrice = (priceStr) => {
 };
 
 const generateClinicTimes = (selectedServiceDuration, takenTimes, selectedDate) => {
-  const isSunday = new Date(selectedDate).getDay() === 0;
+  const isSunday = new Date(`${selectedDate}T12:00:00`).getDay() === 0;
   const start = 10 * 60;
   const end = isSunday ? 16 * 60 + 30 : 17 * 60;
   const lunchStart = 12 * 60;
@@ -88,16 +52,9 @@ const generateClinicTimes = (selectedServiceDuration, takenTimes, selectedDate) 
       const apptTime = appt.appointment_time || appt.time;
       if (!apptTime) return false;
 
-      const [timePart, meridiem] = apptTime.split(" ");
-      if (!timePart || !meridiem) return false;
-
-      let [h, m] = timePart.split(":").map(Number);
-      if (Number.isNaN(h) || Number.isNaN(m)) return false;
-
-      if (meridiem === "PM" && h !== 12) h += 12;
-      if (meridiem === "AM" && h === 12) h = 0;
-
-      const apptStart = h * 60 + m;
+      const apptStart = timeMinutes(apptTime);
+      // Unreadable occupied slots must not be treated as free time.
+      if (apptStart === null) return true;
       let apptDuration = 60;
       const apptService = appt.service || appt.service_type;
 
@@ -113,17 +70,26 @@ const generateClinicTimes = (selectedServiceDuration, takenTimes, selectedDate) 
       return t < apptEnd && newServiceEnd > apptStart;
     });
 
-    slots.push({ label, taken: isOccupied });
+    const now = new Date();
+    const clinicNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+    const past = selectedDate === clinicDate(now) && t <= clinicNow.getUTCHours() * 60 + clinicNow.getUTCMinutes();
+    slots.push({ label, taken: isOccupied || past });
   }
 
   return slots;
 };
 
 export default function BookingScreen({ route, navigation }) {
+  const insets = useSafeAreaInsets();
+  const slotRequest = useRef(0);
+  const bookingBusy = useRef(false);
+  const [slotError, setSlotError] = useState('');
+  const [slotsReady, setSlotsReady] = useState(false);
+  const [bookingCreated, setBookingCreated] = useState(false);
   const rescheduleId = route?.params?.rescheduleId;
 
   const [userId, setUserId] = useState(null);
-  const [branch, setBranch] = useState(null);
+  const [branch, setBranch] = useState(BRANCHES.includes(route?.params?.initialBranch) ? route.params.initialBranch : null);
   const [category, setCategory] = useState(null);
   const [service, setService] = useState(null);
   const [dentist, setDentist] = useState(null);
@@ -147,114 +113,60 @@ export default function BookingScreen({ route, navigation }) {
     onPrimaryPress: () => {},
   });
 
-  const isComplete = branch && category && service && dentist && date && time;
+  const isComplete = branch && category && service && dentist && date && time && slotsReady && !loadingSlots && !slotError && !bookingCreated;
 
   const today = new Date();
-  const minDateString = today.toISOString().split("T")[0];
+  const minDateString = clinicDate(today);
   const maxDate = new Date();
   maxDate.setMonth(today.getMonth() + 3);
-  const maxDateString = maxDate.toISOString().split("T")[0];
-
-  useEffect(() => {
-    fetchUserIdAndAppointments();
-  }, []);
+  const maxDateString = clinicDate(maxDate);
 
   const fetchUserIdAndAppointments = async () => {
-    try {
-      let currentId = null;
-      const cachedUserData = await AsyncStorage.getItem("userData");
-
-      if (cachedUserData) {
-        const parsedUser = JSON.parse(cachedUserData);
-        if (parsedUser && parsedUser.id) {
-          currentId = parsedUser.id;
-          setUserId(parsedUser.id);
-        }
-      }
-
-      if (!currentId) {
-        const userEmail = await AsyncStorage.getItem("userEmail");
-        if (userEmail) {
-          const response = await fetch(
-            `${API_BASE_URL}/api/user-profile?email=${encodeURIComponent(userEmail)}`
-          );
-          const data = await response.json();
-          if (response.ok && data.id) {
-            currentId = data.id;
-            setUserId(data.id);
-          }
-        }
-      }
-
-      if (currentId) {
-        const apptRes = await fetch(`${API_BASE_URL}/api/appointments?userId=${currentId}`);
-        if (apptRes.ok) {
-          const apptData = await apptRes.json();
-          setUserAppointments(Array.isArray(apptData) ? apptData : apptData.appointments || []);
-        }
-      }
-    } catch (error) {
-      console.error("Failed to load user ID and appointments:", error);
+    const stored = await AsyncStorage.getItem('userData');
+    const parsed = stored ? JSON.parse(stored) : null;
+    let currentId = parsed?.id || parsed?.user_id;
+    if (!currentId) {
+      const email = await AsyncStorage.getItem('userEmail');
+      if (email) currentId = (await requestJson(`${API_BASE_URL}/api/user-profile?email=${encodeURIComponent(email)}`)).id;
     }
+    if (!currentId) throw new Error('Could not identify your account. Please log in again.');
+    const data = await requestJson(`${API_BASE_URL}/api/user-appointments/${encodeURIComponent(currentId)}`);
+    return { currentId, appointments: requireArray(data, 'appointments') };
   };
 
   const fetchTakenTimes = async (selectedDate) => {
-    if (!selectedDate) {
-      setTakenTimes([]);
-      return;
-    }
-
+    const requestId = ++slotRequest.current;
+    setTime(null);
+    setSlotsReady(false);
+    setSlotError('');
+    if (!selectedDate || !dentist) { setLoadingSlots(false); return; }
     setLoadingSlots(true);
-
     try {
-      let combinedTaken = [];
-
-      if (dentist) {
-        const response = await fetch(
-          `${API_BASE_URL}/api/booked-times?date=${encodeURIComponent(
-            selectedDate
-          )}&dentist=${encodeURIComponent(dentist)}`
-        );
-
-        const rawText = await response.text();
-        let resObj = {};
-        try {
-          resObj = rawText ? JSON.parse(rawText) : {};
-        } catch (e) {}
-
-        const slotsList = Array.isArray(resObj)
-          ? resObj
-          : Array.isArray(resObj.bookedTimes)
-          ? resObj.bookedTimes
-          : [];
-
-        combinedTaken = [...slotsList];
-      }
-
-      const userConflicts = userAppointments
-        .filter((a) => {
-          const apptDate = a.appointment_date || a.date;
-          const status = (a.status || "").toLowerCase();
-          return (
-            apptDate === selectedDate &&
-            status !== "cancelled" &&
-            (!rescheduleId || a.id !== rescheduleId)
-          );
-        })
-        .map((a) => ({
-          appointment_time: a.appointment_time || a.time,
-          service: a.service_type || a.service,
-        }));
-
-      combinedTaken = [...combinedTaken, ...userConflicts];
-      setTakenTimes(combinedTaken);
+      const [{ currentId, appointments }, data] = await Promise.all([
+        fetchUserIdAndAppointments(),
+        requestJson(`${API_BASE_URL}/api/appointments/check-availability?date=${encodeURIComponent(selectedDate)}&dentist=${encodeURIComponent(dentist)}`),
+      ]);
+      const slots = requireArray(data, 'bookedTimes');
+      if (slots.some(a => timeMinutes(a.appointment_time || a.time) === null)) throw new Error('Availability could not be read. Please retry or contact the clinic.');
+      if (requestId !== slotRequest.current) return;
+      const conflicts = appointments.filter(a => dateKey(a.appointment_date || a.date) === selectedDate &&
+        !['cancelled', 'rescheduled', 'completed'].includes(String(a.status || '').trim().toLowerCase()) &&
+        (!rescheduleId || String(a.id) !== String(rescheduleId)));
+      setUserId(currentId);
+      setUserAppointments(appointments);
+      setTakenTimes([...slots, ...conflicts]);
+      setSlotsReady(true);
     } catch (error) {
-      console.error("FETCH TAKEN TIMES ERROR:", error);
-      setTakenTimes([]);
+      if (requestId === slotRequest.current) setSlotError(error.message || 'Unable to check availability. Please try again.');
     } finally {
-      setLoadingSlots(false);
+      if (requestId === slotRequest.current) setLoadingSlots(false);
     }
   };
+
+  useEffect(() => {
+    fetchTakenTimes(date);
+    return () => { slotRequest.current += 1; };
+  }, [date, dentist, branch, service, rescheduleId]);
 
   const handleOpenConfirm = () => {
     if (!isComplete || bookingLoading) return;
@@ -264,10 +176,10 @@ export default function BookingScreen({ route, navigation }) {
       const apptTime = a.appointment_time || a.time;
       const status = (a.status || "").toLowerCase();
       return (
-        apptDate === date &&
-        apptTime === time &&
+        dateKey(apptDate) === date &&
+        timeMinutes(apptTime) === timeMinutes(time) &&
         status !== "cancelled" &&
-        (!rescheduleId || a.id !== rescheduleId)
+        (!rescheduleId || String(a.id) !== String(rescheduleId))
       );
     });
 
@@ -287,8 +199,14 @@ export default function BookingScreen({ route, navigation }) {
   };
 
   const submitBooking = async () => {
-    if (bookingLoading) return;
-
+    if (bookingBusy.current || !isComplete) return;
+    if (date < clinicDate()) { setDate(null); return; }
+    if (date === clinicDate()) {
+      const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
+      if (timeMinutes(time) <= now.getUTCHours() * 60 + now.getUTCMinutes()) { fetchTakenTimes(date); return; }
+    }
+    bookingBusy.current = true;
+    setBookingLoading(true);
     let currentUserId = userId;
 
     if (!currentUserId) {
@@ -302,6 +220,8 @@ export default function BookingScreen({ route, navigation }) {
     }
 
     if (!currentUserId) {
+      bookingBusy.current = false;
+      setBookingLoading(false);
       setConfirmModalVisible(false);
       setAlertConfig({
         visible: true,
@@ -324,6 +244,7 @@ export default function BookingScreen({ route, navigation }) {
       time: time,
       branch: branch,
       basePrice: calculatedBasePrice,
+      amount: calculatedBasePrice,
 
       user_id: Number(currentUserId),
       dentist_name: dentist,
@@ -338,54 +259,28 @@ export default function BookingScreen({ route, navigation }) {
     setBookingLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/book-appointment`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify(payload),
+      const resData = await requestJson(`${API_BASE_URL}/api/book-appointment`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       });
-
-      const rawText = await response.text();
-      let resData = {};
-      try {
-        resData = rawText ? JSON.parse(rawText) : {};
-      } catch (parseError) {
-        resData = { message: rawText || "Invalid response from server." };
-      }
-
-      if (!response.ok) {
-        throw new Error(resData?.message || `Booking failed with status ${response.status}`);
-      }
-
+      setBookingCreated(true);
+      let rescheduleFailed = false;
       if (rescheduleId) {
         try {
-          await fetch(`${API_BASE_URL}/api/update-appointment-status`, {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-              Accept: "application/json",
-            },
-            body: JSON.stringify({
-              appointment_id: rescheduleId,
-              status: "Rescheduled",
-            }),
+          await requestJson(`${API_BASE_URL}/api/update-appointment-status`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ appointment_id: rescheduleId, status: 'Rescheduled' }),
           });
-        } catch (rescheduleError) {
-          console.warn("Reschedule update warning:", rescheduleError);
-        }
+        } catch { rescheduleFailed = true; }
       }
-
       setConfirmModalVisible(false);
 
-      const bookingReference = resData?.booking_ref || resData?.reference || "Confirmed";
+      const bookingReference = resData?.booking_ref || resData?.reference || "Not provided";
 
       setAlertConfig({
         visible: true,
-        type: "success",
-        title: "Appointment Booked!",
-        message: "Your appointment request has been submitted to the clinic.",
+        type: rescheduleFailed ? "warning" : "success",
+        title: rescheduleFailed ? "New Appointment Booked" : "Appointment Requested",
+        message: rescheduleFailed ? "Your new request was created, but the previous appointment could not be updated. Please review your visits and contact the clinic. Do not submit another booking." : "Your appointment request has been submitted. Please wait for clinic confirmation.",
         details: [
           { label: "Service", value: service.name },
           { label: "Base Price", value: service.price, highlight: true },
@@ -402,11 +297,12 @@ export default function BookingScreen({ route, navigation }) {
         visible: true,
         type: "error",
         title: "Booking Failed",
-        message: error?.message || "Unable to connect to the booking server.",
+        message: `${error?.message || "Unable to connect to the booking server."} Check your Visits list before submitting again in case the request was received.`,
         details: [],
         onPrimaryPress: () => setAlertConfig((prev) => ({ ...prev, visible: false })),
       });
     } finally {
+      bookingBusy.current = false;
       setBookingLoading(false);
     }
   };
@@ -421,7 +317,8 @@ export default function BookingScreen({ route, navigation }) {
     if (date) {
       marks[date] = {
         selected: true,
-        selectedColor: "#001166",
+          selectedColor: colors.primary,
+          selectedTextColor: colors.ink,
       };
     }
     return marks;
@@ -429,25 +326,26 @@ export default function BookingScreen({ route, navigation }) {
 
   return (
     <View style={styles.container}>
+      <ScreenBackground />
       <ScreenHeader title="Book Appointment" showBack={true} />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* BRANCH */}
         <Text style={styles.label}>Select Branch</Text>
-        <TouchableOpacity
+        <TouchableOpacity accessibilityRole="button"
           style={styles.dropdown}
           onPress={() => setOpenDropdown(openDropdown === "branch" ? null : "branch")}
         >
           <View style={styles.dropdownRow}>
             <Text style={styles.dropdownText}>{branch || "Choose a clinic branch"}</Text>
-            <Ionicons name="chevron-down" size={18} color="#6B7280" />
+            <Ionicons name="chevron-down" size={18} color={colors.muted} />
           </View>
         </TouchableOpacity>
 
         {openDropdown === "branch" && (
           <View style={styles.dropdownList}>
             {BRANCHES.map((b) => (
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button"
                 key={b}
                 style={styles.dropdownItem}
                 onPress={() => {
@@ -467,20 +365,20 @@ export default function BookingScreen({ route, navigation }) {
 
         {/* CATEGORY */}
         <Text style={styles.label}>Select Category</Text>
-        <TouchableOpacity
+        <TouchableOpacity accessibilityRole="button"
           style={styles.dropdown}
           onPress={() => setOpenDropdown(openDropdown === "cat" ? null : "cat")}
         >
           <View style={styles.dropdownRow}>
             <Text style={styles.dropdownText}>{category || "Choose a category"}</Text>
-            <Ionicons name="chevron-down" size={18} color="#6B7280" />
+            <Ionicons name="chevron-down" size={18} color={colors.muted} />
           </View>
         </TouchableOpacity>
 
         {openDropdown === "cat" && (
           <View style={styles.dropdownList}>
             {Object.keys(SERVICE_CATEGORIES).map((c) => (
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button"
                 key={c}
                 style={styles.dropdownItem}
                 onPress={() => {
@@ -502,7 +400,7 @@ export default function BookingScreen({ route, navigation }) {
         {category && (
           <>
             <Text style={styles.label}>Choose Service</Text>
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button"
               style={styles.dropdown}
               onPress={() => setOpenDropdown(openDropdown === "srv" ? null : "srv")}
             >
@@ -512,14 +410,14 @@ export default function BookingScreen({ route, navigation }) {
                     ? `${service.name} • ${service.price} (${service.duration / 60}hr)`
                     : "Choose service"}
                 </Text>
-                <Ionicons name="chevron-down" size={18} color="#6B7280" />
+                <Ionicons name="chevron-down" size={18} color={colors.muted} />
               </View>
             </TouchableOpacity>
 
             {openDropdown === "srv" && (
               <View style={styles.dropdownList}>
                 {SERVICE_CATEGORIES[category].map((s) => (
-                  <TouchableOpacity
+                  <TouchableOpacity accessibilityRole="button"
                     key={s.name}
                     style={styles.dropdownItem}
                     onPress={() => {
@@ -539,7 +437,7 @@ export default function BookingScreen({ route, navigation }) {
             )}
 
             <View style={styles.infoRow}>
-              <Ionicons name="information-circle" size={15} color="#001166" style={{ marginRight: 6, marginTop: 1 }} />
+              <Ionicons name="information-circle" size={15} color={colors.accent} style={{ marginRight: 6, marginTop: 1 }} />
               <Text style={styles.infoText}>
                 Prices marked as "Case to Case" or "Starts at" depend on materials and severity. Final costs are set during consultation.
               </Text>
@@ -553,20 +451,20 @@ export default function BookingScreen({ route, navigation }) {
           <Text style={styles.helper}>Please select a branch first</Text>
         ) : (
           <>
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button"
               style={styles.dropdown}
               onPress={() => setOpenDropdown(openDropdown === "den" ? null : "den")}
             >
               <View style={styles.dropdownRow}>
                 <Text style={styles.dropdownText}>{dentist || "Choose a dentist"}</Text>
-                <Ionicons name="chevron-down" size={18} color="#6B7280" />
+                <Ionicons name="chevron-down" size={18} color={colors.muted} />
               </View>
             </TouchableOpacity>
 
             {openDropdown === "den" && (
               <View style={styles.dropdownList}>
                 {DENTISTS_BY_BRANCH[branch]?.map((d) => (
-                  <TouchableOpacity
+                  <TouchableOpacity accessibilityRole="button"
                     key={d}
                     style={styles.dropdownItem}
                     onPress={() => {
@@ -597,13 +495,21 @@ export default function BookingScreen({ route, navigation }) {
               onDayPress={(day) => {
                 setDate(day.dateString);
                 setTime(null);
-                fetchTakenTimes(day.dateString);
+
               }}
               markedDates={markedDates}
-              theme={{
-                todayTextColor: "#001166",
-                arrowColor: "#001166",
-                selectedDayBackgroundColor: "#001166",
+                theme={{
+                  calendarBackground: colors.surface,
+                  textSectionTitleColor: colors.ink,
+                  dayTextColor: colors.ink,
+                  textDisabledColor: colors.ink,
+                  monthTextColor: colors.ink,
+                  textDayFontFamily: fonts.semiBold,
+                  textMonthFontFamily: fonts.bold,
+                  todayTextColor: colors.accent,
+                  arrowColor: colors.accent,
+                  selectedDayBackgroundColor: colors.primary,
+                  selectedDayTextColor: colors.ink,
               }}
             />
           </View>
@@ -614,11 +520,13 @@ export default function BookingScreen({ route, navigation }) {
           <>
             <Text style={styles.label}>Choose Time</Text>
             {loadingSlots ? (
-              <ActivityIndicator size="small" color="#001166" style={{ marginTop: 14 }} />
-            ) : (
+              <ActivityIndicator size="small" color={colors.accent} style={{ marginTop: 14 }} />
+            ) : slotError ? (
+              <LoadError message={slotError} onRetry={() => fetchTakenTimes(date)} />
+            ) : !service ? (<Text style={styles.helper}>Choose a service to see appointment times.</Text>) : (
               <View style={styles.timeGrid}>
                 {availableTimes.map((t) => (
-                  <TouchableOpacity
+                  <TouchableOpacity accessibilityRole="button"
                     key={t.label}
                     disabled={t.taken}
                     style={[
@@ -646,8 +554,8 @@ export default function BookingScreen({ route, navigation }) {
       </ScrollView>
 
       {/* BOTTOM ACTION BAR */}
-      <View style={styles.bottomBar}>
-        <TouchableOpacity
+      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+        <TouchableOpacity accessibilityRole="button"
           style={styles.cancelBtn}
           onPress={() => navigation.goBack()}
           disabled={bookingLoading}
@@ -655,16 +563,16 @@ export default function BookingScreen({ route, navigation }) {
           <Text style={styles.cancelText}>Cancel</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
+        <TouchableOpacity accessibilityRole="button"
           disabled={!isComplete || bookingLoading}
           onPress={handleOpenConfirm}
           style={[
             styles.confirmBtn,
-            (!isComplete || bookingLoading) && { backgroundColor: "#9CA3AF" },
+            (!isComplete || bookingLoading) && { backgroundColor: colors.muted },
           ]}
         >
           {bookingLoading ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
+            <ActivityIndicator size="small" color={colors.ink} />
           ) : (
             <Text style={styles.confirmText}>Confirm Booking</Text>
           )}
@@ -676,12 +584,12 @@ export default function BookingScreen({ route, navigation }) {
         visible={confirmModalVisible}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setConfirmModalVisible(false)}
+        onRequestClose={() => { if (!bookingBusy.current) setConfirmModalVisible(false); }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Ionicons name="calendar" size={24} color="#001166" style={{ marginRight: 8 }} />
+              <Ionicons name="calendar" size={24} color={colors.accent} style={{ marginRight: 8 }} />
               <Text style={styles.modalTitle}>Confirm Appointment</Text>
             </View>
 
@@ -713,7 +621,7 @@ export default function BookingScreen({ route, navigation }) {
             </View>
 
             <View style={styles.modalActions}>
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button"
                 style={styles.modalCancelBtn}
                 onPress={() => setConfirmModalVisible(false)}
                 disabled={bookingLoading}
@@ -721,13 +629,13 @@ export default function BookingScreen({ route, navigation }) {
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button"
                 style={styles.modalSubmitBtn}
                 onPress={submitBooking}
                 disabled={bookingLoading}
               >
                 {bookingLoading ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <ActivityIndicator size="small" color={colors.ink} />
                 ) : (
                   <Text style={styles.modalSubmitText}>Confirm & Book</Text>
                 )}
@@ -751,47 +659,47 @@ export default function BookingScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#FFFFFF" },
+  container: { flex: 1, backgroundColor: colors.canvas },
   content: { padding: 16, paddingBottom: 120 },
-  label: { marginTop: 14, marginBottom: 6, fontFamily: fonts.medium, color: "#111827" },
+  label: { marginTop: 14, marginBottom: 6, fontFamily: fonts.medium, color: colors.ink },
   dropdown: {
     borderWidth: 1.5,
-    borderColor: "#D1D5DB",
+    borderColor: colors.border,
     borderRadius: 24,
     padding: 16,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
   },
-  dropdownText: { color: "#374151", fontFamily: fonts.regular },
+  dropdownText: { color: colors.ink, fontFamily: fonts.regular },
   dropdownRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   dropdownList: {
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: colors.border,
     borderRadius: 20,
     marginTop: 6,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     overflow: "hidden",
   },
-  dropdownItem: { padding: 14, borderBottomWidth: 1, borderColor: "#F3F4F6" },
-  itemText: { fontFamily: fonts.medium, color: "#374151" },
+  dropdownItem: { padding: 14, borderBottomWidth: 1, borderColor: colors.aquaSoft },
+  itemText: { fontFamily: fonts.medium, color: colors.ink },
   infoRow: { flexDirection: "row", marginTop: 8, paddingHorizontal: 4, alignItems: "flex-start" },
-  infoText: { fontSize: 11, color: "#6B7280", fontFamily: fonts.medium, flex: 1, lineHeight: 16 },
-  helper: { textAlign: "center", color: "#6B7280", marginTop: 10, fontFamily: fonts.medium },
-  calendarContainer: { marginTop: 4, borderRadius: 24, overflow: "hidden", borderWidth: 1, borderColor: "#E5E7EB" },
+  infoText: { fontSize: 11, color: colors.muted, fontFamily: fonts.medium, flex: 1, lineHeight: 16 },
+  helper: { textAlign: "center", color: colors.muted, marginTop: 10, fontFamily: fonts.medium },
+  calendarContainer: { marginTop: 4, borderRadius: 24, overflow: "hidden", borderWidth: 1, borderColor: colors.border },
   timeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 10, justifyContent: "space-between" },
   timeBtn: {
     width: "48%",
     borderWidth: 1.5,
-    borderColor: "#D1D5DB",
-    borderRadius: 20,
+    borderColor: colors.border,
+    borderRadius: 999,
     paddingVertical: 12,
     paddingHorizontal: 16,
     alignItems: "center",
   },
-  timeSelected: { backgroundColor: "#001166", borderColor: "#001166" },
-  timeText: { color: "#374151", fontFamily: fonts.medium, fontSize: 13 },
-  timeTextSelected: { color: "#FFFFFF", fontFamily: fonts.semiBold },
-  timeDisabled: { backgroundColor: "#F3F4F6", borderColor: "#E5E7EB", opacity: 0.6 },
-  timeTextDisabled: { color: "#9CA3AF" },
+  timeSelected: { backgroundColor: colors.primary, borderColor: colors.accent },
+  timeText: { color: colors.ink, fontFamily: fonts.medium, fontSize: 13 },
+  timeTextSelected: { color: colors.ink, fontFamily: fonts.semiBold },
+  timeDisabled: { backgroundColor: colors.aquaSoft, borderColor: colors.border, opacity: 0.6 },
+  timeTextDisabled: { color: colors.muted },
   bottomBar: {
     position: "absolute",
     bottom: 0,
@@ -800,22 +708,22 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 12,
     padding: 16,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     borderTopWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: colors.border,
   },
-  cancelBtn: { flex: 1, backgroundColor: "#F3F4F6", padding: 16, borderRadius: 24, alignItems: "center" },
-  cancelText: { fontFamily: fonts.semiBold, color: "#374151" },
+  cancelBtn: { flex: 1, backgroundColor: colors.aquaSoft, padding: 16, borderRadius: 999, alignItems: "center" },
+  cancelText: { fontFamily: fonts.semiBold, color: colors.ink },
   confirmBtn: {
     flex: 1,
-    backgroundColor: "#001166",
+    backgroundColor: colors.primary,
     padding: 16,
-    borderRadius: 24,
+    borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
     minHeight: 54,
   },
-  confirmText: { color: "#FFFFFF", fontFamily: fonts.semiBold },
+  confirmText: { color: colors.ink, fontFamily: fonts.semiBold },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -825,11 +733,11 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     width: "100%",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     borderRadius: 28,
     padding: 24,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: colors.border,
   },
   modalHeader: {
     flexDirection: "row",
@@ -839,15 +747,15 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontFamily: fonts.bold,
-    color: "#001166",
+    color: colors.accent,
   },
   modalDetailsList: {
-    backgroundColor: "#F9FAFB",
+    backgroundColor: colors.input,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderWidth: 1,
-    borderColor: "#EEF2FF",
+    borderColor: colors.lavender,
     marginBottom: 20,
   },
   modalRow: {
@@ -855,22 +763,22 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6",
+    borderBottomColor: colors.aquaSoft,
   },
   modalRowLabel: {
     fontSize: 13,
     fontFamily: fonts.medium,
-    color: "#6B7280",
+    color: colors.muted,
   },
   modalRowValue: {
     fontSize: 13,
     fontFamily: fonts.semiBold,
-    color: "#111827",
+    color: colors.ink,
     maxWidth: "60%",
     textAlign: "right",
   },
   priceHighlight: {
-    color: "#001166",
+    color: colors.accent,
     fontFamily: fonts.bold,
   },
   modalActions: {
@@ -879,27 +787,27 @@ const styles = StyleSheet.create({
   },
   modalCancelBtn: {
     flex: 1,
-    backgroundColor: "#F3F4F6",
+    backgroundColor: colors.aquaSoft,
     height: 48,
-    borderRadius: 20,
+    borderRadius: 999,
     justifyContent: "center",
     alignItems: "center",
   },
   modalCancelText: {
-    color: "#4B5563",
+    color: colors.muted,
     fontFamily: fonts.semiBold,
     fontSize: 14,
   },
   modalSubmitBtn: {
     flex: 1.5,
-    backgroundColor: "#001166",
+    backgroundColor: colors.primary,
     height: 48,
-    borderRadius: 20,
+    borderRadius: 999,
     justifyContent: "center",
     alignItems: "center",
   },
   modalSubmitText: {
-    color: "#FFFFFF",
+    color: colors.ink,
     fontFamily: fonts.semiBold,
     fontSize: 14,
   },

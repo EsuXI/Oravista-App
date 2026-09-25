@@ -1,14 +1,18 @@
+import { requestJson, requireArray, fileUrl, displayDate } from '../utils/patientData';
+import LoadError from '../components/LoadError';
+import ScreenBackground from '../components/ScreenBackground';
+import { colors } from '../theme/colors';
 import React, { useState, useCallback, useEffect } from "react";
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  TouchableOpacity, 
-  ActivityIndicator, 
-  TextInput, 
-  Linking, 
-  FlatList 
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  TextInput,
+  Linking,
+  FlatList
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -18,7 +22,7 @@ import ScreenHeader from "../components/ScreenHeader";
 import CustomAlertModal from "../components/CustomAlertModal";
 import { API_BASE_URL } from "../config/config";
 
-const CATEGORIES = ["All", "Treatment Record", "Dental Checkup", "X-Ray"];
+const CATEGORIES = ["All", "PDF", "Images", "Other files"];
 const ITEMS_PER_PAGE = 4;
 
 export default function RecordsScreen() {
@@ -26,6 +30,7 @@ export default function RecordsScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [page, setPage] = useState(1);
 
   // Alert State
@@ -39,33 +44,21 @@ export default function RecordsScreen() {
 
   const fetchRecords = async () => {
     setLoading(true);
+    setLoadError('');
     try {
-      let userId = null;
-      const storedUser = await AsyncStorage.getItem("userData");
-      if (storedUser) {
-        const parsed = JSON.parse(storedUser);
-        if (parsed?.id) userId = parsed.id;
+      const stored = await AsyncStorage.getItem('userData');
+      const user = stored ? JSON.parse(stored) : null;
+      let id = user?.id || user?.user_id;
+      if (!id) {
+        const email = await AsyncStorage.getItem('userEmail');
+        if (email) id = (await requestJson(`${API_BASE_URL}/api/user-profile?email=${encodeURIComponent(email)}`)).id;
       }
-
-      if (!userId) {
-        const email = await AsyncStorage.getItem("userEmail");
-        if (email) {
-          const userRes = await fetch(`${API_BASE_URL}/api/user-profile?email=${encodeURIComponent(email)}`);
-          const userData = await userRes.json();
-          if (userRes.ok && userData.id) userId = userData.id;
-        }
-      }
-
-      if (userId) {
-        const response = await fetch(`${API_BASE_URL}/api/patient-records/${userId}`);
-        const data = await response.json();
-        if (response.ok) setRecords(Array.isArray(data) ? data : []);
-      }
+      if (!id) throw new Error('Could not identify your account. Please log in again.');
+      const data = await requestJson(`${API_BASE_URL}/api/patient-records/${encodeURIComponent(id)}`);
+      setRecords(requireArray(data, undefined));
     } catch (error) {
-      console.error("Failed to fetch records", error);
-    } finally {
-      setLoading(false);
-    }
+      setLoadError(error.message || 'Unable to load your records. Please try again.');
+    } finally { setLoading(false); }
   };
 
   useFocusEffect(
@@ -81,21 +74,22 @@ export default function RecordsScreen() {
   const filteredRecords = records.filter((rec) => {
     const searchLower = searchQuery.toLowerCase();
     const nameLower = (rec.file_name || "").toLowerCase();
-    const formattedDate = new Date(rec.upload_date).toLocaleDateString();
+    const formattedDate = displayDate(rec.upload_date);
     const branchName = (rec.clinic_branch || "").toLowerCase();
     const doctorName = (rec.dentist_name || "").toLowerCase();
 
-    const matchesSearch = 
-      nameLower.includes(searchLower) || 
+    const matchesSearch =
+      nameLower.includes(searchLower) ||
       (rec.id || "").toString().includes(searchLower) ||
       formattedDate.includes(searchLower) ||
       branchName.includes(searchLower) ||
       doctorName.includes(searchLower);
-    
-    let matchesCategory = true;
-    if (activeCategory === "X-Ray") matchesCategory = nameLower.includes("xray") || nameLower.includes("x-ray");
-    else if (activeCategory === "Dental Checkup") matchesCategory = nameLower.includes("checkup") || nameLower.includes("clean");
-    else if (activeCategory === "Treatment Record") matchesCategory = !nameLower.includes("x-ray") && !nameLower.includes("checkup");
+
+    // File format is observable; a filename does not establish a clinical diagnosis/type.
+    const isPdf = /\.pdf$/i.test(rec.file_name || '');
+    const isImage = /\.(png|jpe?g|webp|gif|heic)$/i.test(rec.file_name || '');
+    const format = isPdf ? 'PDF' : isImage ? 'Images' : 'Other files';
+    const matchesCategory = activeCategory === 'All' || activeCategory === format;
 
     return matchesSearch && matchesCategory;
   });
@@ -109,7 +103,8 @@ export default function RecordsScreen() {
   };
 
   const handleDownload = (filePath) => {
-    if (!filePath) {
+    const url = fileUrl(filePath, API_BASE_URL);
+    if (!url) {
       setAlertConfig({
         visible: true,
         type: "info",
@@ -119,10 +114,8 @@ export default function RecordsScreen() {
       });
       return;
     }
-    
-    const fileUrl = filePath.startsWith("http") ? filePath : `${API_BASE_URL}/${filePath}`;
-    
-    Linking.openURL(fileUrl).catch(() => {
+
+    Linking.openURL(url).catch(() => {
       setAlertConfig({
         visible: true,
         type: "error",
@@ -134,8 +127,8 @@ export default function RecordsScreen() {
   };
 
   const renderItem = ({ item }) => {
-    const displayAddress = item.clinic_branch || "Gil Puyat, Pasay City";
-    const displayDoctor = item.dentist_name || "Auto-assigned";
+    const displayAddress = item.clinic_branch || "Branch not provided";
+    const displayDoctor = item.dentist_name || "Dentist not provided";
 
     return (
       <View style={styles.card}>
@@ -144,33 +137,33 @@ export default function RecordsScreen() {
             <Text style={styles.type}>Medical Record</Text>
             <Text style={styles.recordId}> • REC-{(item.id || 0).toString().padStart(3, "0")}</Text>
           </View>
-          <TouchableOpacity 
+          <TouchableOpacity accessibilityLabel="Download document" hitSlop={8} accessibilityRole="button"
             style={styles.downloadBtn}
             onPress={() => handleDownload(item.file_path)}
           >
-            <Ionicons name="download-outline" size={18} color="#001166" />
+            <Ionicons name="download-outline" size={18} color={colors.accent} />
           </TouchableOpacity>
         </View>
 
         <Text style={styles.title}>{item.file_name || "Diagnostic File"}</Text>
-        
+
         <View style={{ marginTop: 12, marginBottom: 14 }}>
           <View style={styles.infoRow}>
-            <Ionicons name="person-outline" size={14} color="#6B7280" />
+            <Ionicons name="person-outline" size={14} color={colors.muted} />
             <Text style={styles.infoText}>{displayDoctor}</Text>
           </View>
           <View style={styles.infoRow}>
-            <Ionicons name="location-outline" size={14} color="#6B7280" />
+            <Ionicons name="location-outline" size={14} color={colors.muted} />
             <Text style={styles.infoText} numberOfLines={1}>{displayAddress}</Text>
           </View>
           <View style={styles.infoRow}>
-            <Ionicons name="calendar-outline" size={14} color="#6B7280" />
-            <Text style={styles.infoText}>Uploaded: {new Date(item.upload_date).toLocaleDateString()}</Text>
+            <Ionicons name="calendar-outline" size={14} color={colors.muted} />
+            <Text style={styles.infoText}>Uploaded: {displayDate(item.upload_date)}</Text>
           </View>
         </View>
-        
+
         <View style={styles.noteBox}>
-          <Ionicons name="information-circle" size={14} color="#001166" style={{ marginRight: 6 }} />
+          <Ionicons name="information-circle" size={14} color={colors.accent} style={{ marginRight: 6 }} />
           <Text style={styles.noteText}>
             Tap the download icon above to preview or save this record.
           </Text>
@@ -182,7 +175,7 @@ export default function RecordsScreen() {
   const renderFooter = () => {
     if (displayedData.length >= filteredRecords.length) return null;
     return (
-      <TouchableOpacity style={styles.loadMoreBtn} onPress={loadMoreData} activeOpacity={0.7}>
+      <TouchableOpacity accessibilityRole="button" style={styles.loadMoreBtn} onPress={loadMoreData} activeOpacity={0.7}>
         <Text style={styles.loadMoreText}>Load More</Text>
       </TouchableOpacity>
     );
@@ -190,23 +183,24 @@ export default function RecordsScreen() {
 
   return (
     <View style={styles.container}>
+      <ScreenBackground />
       <ScreenHeader title="Medical Records" />
 
       <View style={styles.searchContainer}>
-        <Ionicons name="search-outline" size={18} color="#9CA3AF" />
-        <TextInput
+        <Ionicons name="search-outline" size={18} color={colors.muted} />
+        <TextInput accessibilityLabel="Search date, clinic, file name..."
           style={styles.searchInput}
           placeholder="Search date, clinic, file name..."
           value={searchQuery}
           onChangeText={setSearchQuery}
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor={colors.muted}
         />
       </View>
 
       <View style={styles.filterContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
+        <ScrollView keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
           {CATEGORIES.map((category) => (
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button"
               key={category}
               style={[styles.filterChip, activeCategory === category && styles.activeFilterChip]}
               onPress={() => setActiveCategory(category)}
@@ -221,9 +215,9 @@ export default function RecordsScreen() {
 
       {loading && page === 1 ? (
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#001166" />
+          <ActivityIndicator size="large" color={colors.accent} />
         </View>
-      ) : (
+      ) : loadError ? (<LoadError message={loadError} onRetry={fetchRecords} />) : (
         <FlatList
           data={displayedData}
           keyExtractor={(item) => item.id.toString()}
@@ -252,29 +246,29 @@ export default function RecordsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F9FAFB" },
-  searchContainer: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFFFFF", marginHorizontal: 16, marginTop: 16, paddingHorizontal: 14, height: 48, borderRadius: 20, borderWidth: 1, borderColor: "#E5E7EB" },
-  searchInput: { flex: 1, marginLeft: 8, fontFamily: fonts.regular, fontSize: 14, color: "#111827" },
+  container: { flex: 1, backgroundColor: colors.canvas },
+  searchContainer: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, marginHorizontal: 16, marginTop: 16, paddingHorizontal: 14, height: 48, borderRadius: 20, borderWidth: 1, borderColor: colors.border },
+  searchInput: { flex: 1, marginLeft: 8, fontFamily: fonts.regular, fontSize: 14, color: colors.ink },
   filterContainer: { paddingVertical: 12, maxHeight: 60 },
   filterScroll: { paddingHorizontal: 16, gap: 8 },
-  filterChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: "#E5E7EB", backgroundColor: "#FFFFFF", justifyContent: "center" },
-  activeFilterChip: { backgroundColor: "#001166", borderColor: "#001166" },
-  filterText: { fontFamily: fonts.medium, fontSize: 13, color: "#6B7280" },
-  activeFilterText: { color: "#FFFFFF" },
+  filterChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, justifyContent: "center" },
+  activeFilterChip: { backgroundColor: colors.primary, borderColor: colors.accent },
+  filterText: { fontFamily: fonts.medium, fontSize: 13, color: colors.muted },
+  activeFilterText: { color: colors.ink },
   centerContainer: { flex: 1, alignItems: "center", justifyContent: "center", marginTop: 40 },
-  emptyText: { fontSize: 14, color: "#9CA3AF", fontFamily: fonts.medium },
+  emptyText: { fontSize: 14, color: colors.muted, fontFamily: fonts.medium },
   content: { padding: 16, paddingBottom: 40 },
-  card: { backgroundColor: "#FFFFFF", borderRadius: 24, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: "#E5E7EB", elevation: 2 },
+  card: { backgroundColor: colors.surface, borderRadius: 28, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: colors.border, elevation: 2 },
   cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   typeBox: { flexDirection: "row", alignItems: "center" },
-  type: { fontSize: 11, fontFamily: fonts.bold, color: "#6B7280", textTransform: "uppercase" },
-  recordId: { fontSize: 11, fontFamily: fonts.medium, color: "#9CA3AF" },
-  downloadBtn: { width: 38, height: 38, borderRadius: 14, backgroundColor: "#EEF2FF", alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 16, fontFamily: fonts.bold, color: "#111827" },
+  type: { fontSize: 11, fontFamily: fonts.bold, color: colors.muted, textTransform: "uppercase" },
+  recordId: { fontSize: 11, fontFamily: fonts.medium, color: colors.muted },
+  downloadBtn: { width: 44, height: 44, borderRadius: 999, backgroundColor: colors.lavender, alignItems: "center", justifyContent: "center" },
+  title: { fontSize: 16, fontFamily: fonts.bold, color: colors.ink },
   infoRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 6 },
-  infoText: { fontSize: 13, color: "#4B5563", fontFamily: fonts.medium, flexShrink: 1 },
-  noteBox: { flexDirection: "row", backgroundColor: "#F9FAFB", borderRadius: 16, padding: 12, borderWidth: 1, borderColor: "#E5E7EB" },
-  noteText: { flex: 1, fontSize: 11, fontFamily: fonts.regular, color: "#4B5563", lineHeight: 16 },
-  loadMoreBtn: { paddingVertical: 14, backgroundColor: "#F3F4F6", borderRadius: 18, alignItems: "center", marginTop: 10, marginBottom: 20, borderWidth: 1, borderColor: "#E5E7EB" },
-  loadMoreText: { color: "#001166", fontFamily: fonts.semiBold, fontSize: 14 },
+  infoText: { fontSize: 13, color: colors.muted, fontFamily: fonts.medium, flexShrink: 1 },
+  noteBox: { flexDirection: "row", backgroundColor: colors.input, borderRadius: 16, padding: 12, borderWidth: 1, borderColor: colors.border },
+  noteText: { flex: 1, fontSize: 11, fontFamily: fonts.regular, color: colors.muted, lineHeight: 16 },
+  loadMoreBtn: { paddingVertical: 14, backgroundColor: colors.aquaSoft, borderRadius: 999, alignItems: "center", marginTop: 10, marginBottom: 20, borderWidth: 1, borderColor: colors.border },
+  loadMoreText: { color: colors.accent, fontFamily: fonts.semiBold, fontSize: 14 },
 });

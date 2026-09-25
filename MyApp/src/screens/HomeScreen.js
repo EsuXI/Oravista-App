@@ -1,3 +1,9 @@
+import { fileUrl, requestJson, requireArray, nextAppointment, money, displayDate } from '../utils/patientData';
+import LoadError from '../components/LoadError';
+import BrandLogo from '../components/BrandLogo';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ScreenBackground from '../components/ScreenBackground';
+import { colors } from '../theme/colors';
 import React, { useState, useCallback } from "react";
 import {
   View,
@@ -10,6 +16,7 @@ import {
   FlatList,
   RefreshControl,
   Platform,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
@@ -19,10 +26,14 @@ import { API_BASE_URL } from "../config/config";
 import CustomAlertModal from "../components/CustomAlertModal";
 
 export default function HomeScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const [userData, setUserData] = useState({ id: null, firstName: "User", branch: "Main Branch" });
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const [upcomingAppt, setUpcomingAppt] = useState(null);
   const [recentAppointments, setRecentAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [notifError, setNotifError] = useState('');
 
   // Notification States
   const [notifications, setNotifications] = useState([]);
@@ -45,12 +56,14 @@ export default function HomeScreen({ navigation }) {
   const loadUser = useCallback(async () => {
     try {
       let activeId = null;
+      setAvatarFailed(false);
 
       const stored = await AsyncStorage.getItem("userData");
       if (stored) {
         const parsed = JSON.parse(stored);
         activeId = parsed.id || parsed.user_id;
         setUserData({
+          ...parsed,
           id: activeId,
           firstName: parsed.firstName || parsed.first_name || "User",
           branch: parsed.branch || "Gil Puyat, Pasay",
@@ -65,6 +78,7 @@ export default function HomeScreen({ navigation }) {
             const profile = await res.json();
             activeId = profile.id;
             setUserData({
+              ...profile,
               id: profile.id,
               firstName: profile.first_name || profile.firstName || "User",
               branch: profile.branch || "Gil Puyat, Pasay",
@@ -83,42 +97,26 @@ export default function HomeScreen({ navigation }) {
 
   // Fetch appointments for upcoming card & history
   const fetchAppointments = useCallback(async (userId) => {
-    if (!userId) return;
+    setLoadError('');
     try {
-      const res = await fetch(`${API_BASE_URL}/api/user-appointments/${userId}`);
-      if (res.ok) {
-        const data = await res.json();
-        const appts = Array.isArray(data) ? data : data.appointments || [];
-        setRecentAppointments(appts.slice(0, 5));
-
-        const upcoming = appts.find((a) =>
-          ["pending", "approved", "confirmed"].includes((a.status || "").toLowerCase())
-        );
-        setUpcomingAppt(upcoming || null);
-      }
-    } catch (err) {
-      console.log("Failed to fetch appointments on Home:", err);
-    } finally {
-      setLoading(false);
-    }
+      if (!userId) throw new Error('Could not identify your account. Please log in again.');
+      const data = await requestJson(`${API_BASE_URL}/api/user-appointments/${userId}`);
+      const appts = requireArray(data, 'appointments');
+      setRecentAppointments(appts.slice(0, 5));
+      setUpcomingAppt(nextAppointment(appts));
+    } catch (error) { setLoadError(error.message || 'Unable to load appointments.'); }
+    finally { setLoading(false); }
   }, []);
 
-  // Fetch Notifications
   const fetchNotifications = useCallback(async (userId) => {
     if (!userId) return;
     setNotifLoading(true);
-
+    setNotifError('');
     try {
-      const res = await fetch(`${API_BASE_URL}/api/notifications/${userId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setNotifications(Array.isArray(data) ? data : []);
-      }
-    } catch (err) {
-      console.log("Failed to fetch notifications:", err);
-    } finally {
-      setNotifLoading(false);
-    }
+      const data = await requestJson(`${API_BASE_URL}/api/notifications/${userId}`);
+      setNotifications(requireArray(data));
+    } catch (error) { setNotifError(error.message || 'Unable to load notifications.'); }
+    finally { setNotifLoading(false); }
   }, []);
 
   // Sync on screen focus
@@ -127,10 +125,8 @@ export default function HomeScreen({ navigation }) {
       let activeUserId = null;
       loadUser().then((id) => {
         activeUserId = id;
-        if (id) {
-          fetchAppointments(id);
-          fetchNotifications(id);
-        }
+        fetchAppointments(id);
+        if (id) fetchNotifications(id);
       });
 
       const interval = setInterval(() => {
@@ -146,43 +142,21 @@ export default function HomeScreen({ navigation }) {
   // Mark single notification as read
   const markAsRead = async (notificationId) => {
     if (!userData.id) return;
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === notificationId ? { ...n, is_read: true } : n))
-    );
     try {
-      await fetch(`${API_BASE_URL}/api/notifications/${notificationId}/read`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: userData.id }),
+      await requestJson(`${API_BASE_URL}/api/notifications/${notificationId}/read`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: userData.id }),
       });
-    } catch (e) {
-      console.log("Failed to mark notification read:", e);
-    }
+      setNotifications(prev => prev.map(n => n.id === notificationId ? { ...n, is_read: true } : n));
+    } catch { setNotifError('Could not mark the notification as read. Please try again.'); }
   };
 
-  // Mark all unread notifications as read
   const markAllAsRead = async () => {
     if (!userData.id || unreadCount === 0 || isMarkingAllRead) return;
-
-    const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id);
-    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
     setIsMarkingAllRead(true);
-
+    setNotifError('');
     try {
-      await Promise.all(
-        unreadIds.map((id) =>
-          fetch(`${API_BASE_URL}/api/notifications/${id}/read`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ user_id: userData.id }),
-          })
-        )
-      );
-    } catch (e) {
-      console.log("Failed to mark all notifications read:", e);
-    } finally {
-      setIsMarkingAllRead(false);
-    }
+      await Promise.all(notifications.filter(n => !n.is_read).map(n => markAsRead(n.id)));
+    } finally { setIsMarkingAllRead(false); }
   };
 
   // Handle Late/No-Show Reschedule Click
@@ -277,7 +251,7 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.notifFooterRow}>
           {isLateNoShow && (
             <View style={styles.notifActionRow}>
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button"
                 style={styles.notifCancelBtn}
                 onPress={() => {
                   setSelectedCancelNotif(item);
@@ -287,7 +261,7 @@ export default function HomeScreen({ navigation }) {
                 <Text style={styles.notifCancelBtnText}>Cancel</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button"
                 style={styles.notifRescheduleBtn}
                 onPress={() => handleLateNoShowReschedule(item)}
               >
@@ -297,11 +271,11 @@ export default function HomeScreen({ navigation }) {
           )}
 
           {!item.is_read && (
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button"
               style={styles.markReadSingleBtn}
               onPress={() => markAsRead(item.id)}
             >
-              <Ionicons name="checkmark-outline" size={14} color="#001166" />
+              <Ionicons name="checkmark-outline" size={14} color={colors.accent} />
               <Text style={styles.markReadSingleText}>Mark as read</Text>
             </TouchableOpacity>
           )}
@@ -312,27 +286,34 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      <ScreenBackground />
       {/* Top Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 20, overflow: "hidden" }]}><ScreenBackground header />
         <View style={{ flex: 1 }}>
+          <BrandLogo width={128} style={{ marginBottom: 12 }} />
           <Text style={styles.welcomeSubtitle}>Mabuhay,</Text>
           <Text style={styles.welcomeTitle}>{userData.firstName}</Text>
           <Text style={styles.branchSubtitle}>
-            <Ionicons name="location-outline" size={12} color="#C7D2FF" />{" "}
+            <Ionicons name="location-outline" size={12} color={colors.muted} />{" "}
             {userData.branch}
           </Text>
         </View>
 
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open your profile" onPress={() => navigation.navigate('Profile', { screen: 'ProfileMain' })} style={styles.homeAvatar}>
+          {!avatarFailed && fileUrl(userData.profile_picture || userData.profile_pic || userData.profile_image || userData.profileImage, API_BASE_URL)
+            ? <Image source={{ uri: fileUrl(userData.profile_picture || userData.profile_pic || userData.profile_image || userData.profileImage, API_BASE_URL) }} style={styles.homeAvatarImage} onError={() => setAvatarFailed(true)} />
+            : <Ionicons name="person" size={25} color={colors.accent} />}
+        </TouchableOpacity>
         {/* Bell Notification Icon with Unread Red Badge */}
-        <TouchableOpacity
-          style={styles.bellButton}
+        <TouchableOpacity accessibilityRole="button"
+          accessibilityLabel="Open notifications" style={styles.bellButton}
           onPress={() => {
             setShowNotificationModal(true);
             if (userData.id) fetchNotifications(userData.id);
           }}
           activeOpacity={0.7}
         >
-          <Ionicons name="notifications-outline" size={24} color="#FFFFFF" />
+          <Ionicons name="notifications-outline" size={24} color={colors.ink} />
           {unreadCount > 0 && (
             <View style={styles.badge}>
               <Text style={styles.badgeText}>
@@ -343,7 +324,7 @@ export default function HomeScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
+      <ScrollView keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -351,30 +332,31 @@ export default function HomeScreen({ navigation }) {
             refreshing={loading}
             onRefresh={() => {
               if (userData.id) {
+                setLoading(true);
                 fetchAppointments(userData.id);
                 fetchNotifications(userData.id);
               }
             }}
-            colors={["#001166"]}
+            colors={[colors.accent]}
           />
         }
       >
         {/* Upcoming Appointment Card */}
         <Text style={styles.sectionHeader}>Upcoming Appointment</Text>
         <View style={styles.upcomingCard}>
-          {upcomingAppt ? (
+          {loading ? <ActivityIndicator color={colors.accent} /> : loadError ? (<LoadError message={loadError} onRetry={() => fetchAppointments(userData.id)} />) : upcomingAppt ? (
             <View>
               <View style={styles.cardHeaderRow}>
                 <View style={styles.badgeUpcoming}>
                   <Text style={styles.badgeUpcomingText}>{upcomingAppt.status}</Text>
                 </View>
                 <Text style={styles.upcomingPrice}>
-                  ₱{Number(upcomingAppt.base_price || upcomingAppt.amount || 0).toLocaleString()}
+                  {money(upcomingAppt.amount ?? upcomingAppt.base_price)}
                 </Text>
               </View>
               <Text style={styles.upcomingService}>{upcomingAppt.service_type}</Text>
               <View style={styles.detailRow}>
-                <Ionicons name="calendar-outline" size={15} color="#C7D2FF" />
+                <Ionicons name="calendar-outline" size={15} color={colors.muted} />
                 <Text style={styles.detailText}>
                   {new Date(upcomingAppt.appointment_date).toLocaleDateString("en-US", {
                     month: "long",
@@ -385,17 +367,17 @@ export default function HomeScreen({ navigation }) {
                 </Text>
               </View>
               <View style={styles.detailRow}>
-                <Ionicons name="person-outline" size={15} color="#C7D2FF" />
+                <Ionicons name="person-outline" size={15} color={colors.muted} />
                 <Text style={styles.detailText}>{upcomingAppt.dentist_name}</Text>
               </View>
             </View>
           ) : (
             <View style={styles.emptyCard}>
-              <Ionicons name="calendar-clear-outline" size={36} color="#9CA3AF" />
+              <Ionicons name="calendar-clear-outline" size={36} color={colors.muted} />
               <Text style={styles.emptyUpcomingText}>No upcoming appointments scheduled.</Text>
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button"
                 style={styles.bookShortcutBtn}
-                onPress={() => navigation.navigate("Appointments")}
+                onPress={() => navigation.navigate("Booking")}
               >
                 <Text style={styles.bookShortcutBtnText}>Book Appointment</Text>
               </TouchableOpacity>
@@ -406,17 +388,17 @@ export default function HomeScreen({ navigation }) {
         {/* Quick Actions */}
         <Text style={styles.sectionHeader}>Quick Actions</Text>
         <View style={styles.actionGrid}>
-          <TouchableOpacity
+          <TouchableOpacity accessibilityRole="button"
             style={styles.actionCard}
             onPress={() => navigation.navigate("Booking")}
           >
-            <View style={[styles.actionIconBox, { backgroundColor: "#EEF2FF" }]}>
-              <Ionicons name="calendar" size={24} color="#001166" />
+            <View style={[styles.actionIconBox, { backgroundColor: colors.lavender }]}>
+              <Ionicons name="calendar" size={24} color={colors.accent} />
             </View>
             <Text style={styles.actionCardTitle}>Book Visit</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
+          <TouchableOpacity accessibilityRole="button"
             style={styles.actionCard}
             onPress={() => navigation.navigate("Appointments")}
           >
@@ -426,7 +408,7 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.actionCardTitle}>My Visits</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
+          <TouchableOpacity accessibilityRole="button"
             style={styles.actionCard}
             onPress={() => navigation.navigate("Profile", { screen: "Billings" })}
           >
@@ -440,13 +422,13 @@ export default function HomeScreen({ navigation }) {
         {/* Recent Appointments */}
         <View style={styles.recentHeaderRow}>
           <Text style={styles.sectionHeader}>Recent Activity</Text>
-          <TouchableOpacity onPress={() => navigation.navigate("Appointments")}>
+          <TouchableOpacity accessibilityRole="button" onPress={() => navigation.navigate("Appointments")}>
             <Text style={styles.viewAllText}>View All</Text>
           </TouchableOpacity>
         </View>
 
-        {recentAppointments.length === 0 ? (
-          <Text style={styles.emptyListText}>No past history found.</Text>
+        {loading || loadError ? null : recentAppointments.length === 0 ? (
+          <Text style={styles.emptyListText}>No appointment activity yet.</Text>
         ) : (
           recentAppointments.map((item) => (
             <View key={item.id} style={styles.historyCard}>
@@ -459,7 +441,9 @@ export default function HomeScreen({ navigation }) {
               <View
                 style={[
                   styles.statusTag,
-                  (item.status || "").toLowerCase() === "confirmed"
+                  (item.status || "").toLowerCase() === "completed"
+                    ? styles.tagCompleted
+                    : (item.status || "").toLowerCase() === "confirmed"
                     ? styles.tagConfirmed
                     : (item.status || "").toLowerCase() === "cancelled"
                     ? styles.tagCancelled
@@ -469,7 +453,9 @@ export default function HomeScreen({ navigation }) {
                 <Text
                   style={[
                     styles.statusTagText,
-                    (item.status || "").toLowerCase() === "confirmed"
+                    (item.status || "").toLowerCase() === "completed"
+                      ? styles.tagTextCompleted
+                      : (item.status || "").toLowerCase() === "confirmed"
                       ? styles.tagTextConfirmed
                       : (item.status || "").toLowerCase() === "cancelled"
                       ? styles.tagTextCancelled
@@ -496,7 +482,7 @@ export default function HomeScreen({ navigation }) {
             {/* Header */}
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
-                <Ionicons name="notifications" size={22} color="#001166" />
+                <Ionicons name="notifications" size={22} color={colors.accent} />
                 <Text style={styles.modalTitle}>Notifications</Text>
                 {unreadCount > 0 && (
                   <View style={styles.unreadCountBadge}>
@@ -506,29 +492,29 @@ export default function HomeScreen({ navigation }) {
               </View>
 
               {unreadCount > 0 && (
-                <TouchableOpacity
+                <TouchableOpacity accessibilityRole="button"
                   style={styles.markAllReadBtn}
                   onPress={markAllAsRead}
                   disabled={isMarkingAllRead}
                 >
-                  <Ionicons name="checkmark-done" size={16} color="#001166" />
+                  <Ionicons name="checkmark-done" size={16} color={colors.accent} />
                   <Text style={styles.markAllReadText}>Mark all as read</Text>
                 </TouchableOpacity>
               )}
 
-              <TouchableOpacity
+              <TouchableOpacity accessibilityLabel="Close" hitSlop={8} accessibilityRole="button"
                 style={styles.modalCloseBtn}
                 onPress={() => setShowNotificationModal(false)}
               >
-                <Ionicons name="close" size={22} color="#4B5563" />
+                <Ionicons name="close" size={22} color={colors.muted} />
               </TouchableOpacity>
             </View>
 
             {notifLoading ? (
               <View style={styles.centerBox}>
-                <ActivityIndicator size="small" color="#001166" />
+                <ActivityIndicator size="small" color={colors.accent} />
               </View>
-            ) : (
+            ) : notifError ? (<LoadError message={notifError} onRetry={() => fetchNotifications(userData.id)} />) : (
               <FlatList
                 data={notifications}
                 keyExtractor={(item) => String(item.id)}
@@ -536,7 +522,7 @@ export default function HomeScreen({ navigation }) {
                 contentContainerStyle={{ paddingBottom: 24 }}
                 ListEmptyComponent={
                   <View style={styles.emptyNotifBox}>
-                    <Ionicons name="notifications-off-outline" size={48} color="#D1D5DB" />
+                    <Ionicons name="notifications-off-outline" size={48} color={colors.muted} />
                     <Text style={styles.emptyNotifText}>You have no notifications.</Text>
                   </View>
                 }
@@ -574,9 +560,11 @@ export default function HomeScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F9FAFB" },
+  homeAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.surface, borderWidth: 2, borderColor: colors.border, alignItems: "center", justifyContent: "center", marginRight: 10, overflow: "hidden" },
+  homeAvatarImage: { width: "100%", height: "100%" },
+  container: { flex: 1, backgroundColor: colors.canvas },
   header: {
-    backgroundColor: "#001166",
+    backgroundColor: colors.primary,
     paddingTop: Platform.OS === "ios" ? 55 : 45,
     paddingBottom: 25,
     paddingHorizontal: 22,
@@ -585,15 +573,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    elevation: 5,
+    elevation: 3,
   },
-  welcomeSubtitle: { fontFamily: fonts.regular, fontSize: 13, color: "#C7D2FF" },
-  welcomeTitle: { fontFamily: fonts.bold, fontSize: 24, color: "#FFFFFF", marginTop: -2 },
-  branchSubtitle: { fontFamily: fonts.medium, fontSize: 12, color: "#C7D2FF", marginTop: 4 },
+  welcomeSubtitle: { fontFamily: fonts.regular, fontSize: 13, color: colors.muted },
+  welcomeTitle: { fontFamily: fonts.bold, fontSize: 24, color: colors.ink, marginTop: -2 },
+  branchSubtitle: { fontFamily: fonts.medium, fontSize: 12, color: colors.muted, marginTop: 4 },
   bellButton: {
     width: 46,
     height: 46,
-    borderRadius: 23,
+    borderRadius: 999,
     backgroundColor: "rgba(255, 255, 255, 0.15)",
     justifyContent: "center",
     alignItems: "center",
@@ -611,14 +599,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 2,
-    borderColor: "#001166",
+    borderColor: colors.accent,
   },
-  badgeText: { color: "#FFFFFF", fontSize: 10, fontFamily: fonts.bold },
-  scrollContent: { padding: 20, paddingBottom: 40 },
-  sectionHeader: { fontFamily: fonts.bold, fontSize: 16, color: "#111827", marginBottom: 12 },
+  badgeText: { color: colors.white, fontSize: 10, fontFamily: fonts.bold },
+  scrollContent: { padding: 20, paddingBottom: 40 , maxWidth: 680, width: '100%', alignSelf: 'center' },
+  sectionHeader: { fontFamily: fonts.bold, fontSize: 16, color: colors.ink, marginBottom: 12 },
   upcomingCard: {
-    backgroundColor: "#001166",
-    borderRadius: 24,
+    backgroundColor: colors.primary,
+    borderRadius: 28,
     padding: 20,
     marginBottom: 24,
     elevation: 3,
@@ -630,60 +618,62 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 999,
   },
-  badgeUpcomingText: { color: "#FFFFFF", fontSize: 11, fontFamily: fonts.bold, textTransform: "uppercase" },
-  upcomingPrice: { color: "#34D399", fontFamily: fonts.bold, fontSize: 16 },
-  upcomingService: { color: "#FFFFFF", fontFamily: fonts.bold, fontSize: 19, marginVertical: 10 },
+  badgeUpcomingText: { color: colors.ink, fontSize: 11, fontFamily: fonts.bold, textTransform: "uppercase" },
+  upcomingPrice: { color: colors.ink, fontFamily: fonts.bold, fontSize: 16 },
+  upcomingService: { color: colors.ink, fontFamily: fonts.bold, fontSize: 19, marginVertical: 10 },
   detailRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
-  detailText: { color: "#C7D2FF", fontFamily: fonts.medium, fontSize: 13 },
+  detailText: { color: colors.muted, fontFamily: fonts.medium, fontSize: 13 },
   emptyCard: { alignItems: "center", paddingVertical: 20 },
-  emptyUpcomingText: { color: "#E5E7EB", fontFamily: fonts.regular, fontSize: 13, marginTop: 8 },
+  emptyUpcomingText: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13, marginTop: 8 },
   bookShortcutBtn: {
     marginTop: 14,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     paddingHorizontal: 18,
     paddingVertical: 8,
     borderRadius: 999,
   },
-  bookShortcutBtnText: { color: "#001166", fontFamily: fonts.bold, fontSize: 12 },
+  bookShortcutBtnText: { color: colors.accent, fontFamily: fonts.bold, fontSize: 12 },
   actionGrid: { flexDirection: "row", gap: 12, marginBottom: 24 },
   actionCard: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderRadius: 28,
     paddingVertical: 18,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: colors.border,
     elevation: 2,
   },
   actionIconBox: { width: 48, height: 48, borderRadius: 16, justifyContent: "center", alignItems: "center", marginBottom: 8 },
-  actionCardTitle: { fontFamily: fonts.semiBold, fontSize: 13, color: "#111827" },
+  actionCardTitle: { fontFamily: fonts.semiBold, fontSize: 13, color: colors.ink },
   recentHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  viewAllText: { color: "#001166", fontFamily: fonts.bold, fontSize: 13 },
+  viewAllText: { color: colors.accent, fontFamily: fonts.bold, fontSize: 13 },
   historyCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
+    backgroundColor: colors.surface,
+    borderRadius: 28,
     padding: 16,
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: colors.border,
   },
-  historyService: { fontFamily: fonts.semiBold, fontSize: 15, color: "#111827" },
-  historySub: { fontFamily: fonts.regular, fontSize: 12, color: "#6B7280", marginTop: 2 },
+  historyService: { fontFamily: fonts.semiBold, fontSize: 15, color: colors.ink },
+  historySub: { fontFamily: fonts.regular, fontSize: 12, color: colors.muted, marginTop: 2 },
   statusTag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
   statusTagText: { fontSize: 11, fontFamily: fonts.bold, textTransform: "uppercase" },
+  tagCompleted: { backgroundColor: colors.completedSoft },
+  tagTextCompleted: { color: colors.completed },
   tagConfirmed: { backgroundColor: "#D1FAE5" },
   tagTextConfirmed: { color: "#065F46" },
   tagPending: { backgroundColor: "#FEF3C7" },
   tagTextPending: { color: "#92400E" },
   tagCancelled: { backgroundColor: "#FEE2E2" },
   tagTextCancelled: { color: "#991B1B" },
-  emptyListText: { textAlign: "center", color: "#9CA3AF", fontFamily: fonts.regular, marginVertical: 15 },
+  emptyListText: { textAlign: "center", color: colors.muted, fontFamily: fonts.regular, marginVertical: 15 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   modalContainer: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     maxHeight: "80%",
@@ -696,9 +686,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6",
+    borderBottomColor: colors.aquaSoft,
   },
-  modalTitle: { fontSize: 18, fontFamily: fonts.bold, color: "#001166" },
+  modalTitle: { fontSize: 18, fontFamily: fonts.bold, color: colors.accent },
   modalCloseBtn: { padding: 4, marginLeft: 8 },
   unreadCountBadge: { backgroundColor: "#FEE2E2", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
   unreadCountBadgeText: { color: "#DC2626", fontSize: 11, fontFamily: fonts.bold },
@@ -708,29 +698,29 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: "#E8EBF5",
+    borderRadius: 999,
+    backgroundColor: colors.lavender,
   },
-  markAllReadText: { fontSize: 11, fontFamily: fonts.semiBold, color: "#001166" },
+  markAllReadText: { fontSize: 11, fontFamily: fonts.semiBold, color: colors.accent },
   centerBox: { padding: 30, alignItems: "center" },
   notifCard: {
-    backgroundColor: "#F9FAFB",
+    backgroundColor: colors.input,
     padding: 14,
-    borderRadius: 18,
+    borderRadius: 28,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: colors.border,
   },
   notifCardUnread: {
-    backgroundColor: "#F0F4FF",
-    borderColor: "#C7D2FF",
+    backgroundColor: colors.aquaSoft,
+    borderColor: colors.border,
   },
   notifHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
   notifTitleGroup: { flexDirection: "row", alignItems: "center", gap: 6, flex: 1 },
-  unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#001166" },
-  notifTitle: { fontSize: 14, fontFamily: fonts.bold, color: "#001166" },
-  notifTime: { fontSize: 11, fontFamily: fonts.regular, color: "#9CA3AF" },
-  notifMessage: { fontSize: 13, fontFamily: fonts.regular, color: "#4B5563", lineHeight: 18 },
+  unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary },
+  notifTitle: { fontSize: 14, fontFamily: fonts.bold, color: colors.accent },
+  notifTime: { fontSize: 11, fontFamily: fonts.regular, color: colors.muted },
+  notifMessage: { fontSize: 13, fontFamily: fonts.regular, color: colors.muted, lineHeight: 18 },
   notifFooterRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -744,28 +734,28 @@ const styles = StyleSheet.create({
     backgroundColor: "#DC2626",
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 10,
+    borderRadius: 999,
   },
-  notifCancelBtnText: { color: "#FFFFFF", fontFamily: fonts.bold, fontSize: 12 },
+  notifCancelBtnText: { color: colors.white, fontFamily: fonts.bold, fontSize: 12 },
   notifRescheduleBtn: {
-    backgroundColor: "#001166",
+    backgroundColor: colors.primary,
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 10,
+    borderRadius: 999,
   },
-  notifRescheduleBtnText: { color: "#FFFFFF", fontFamily: fonts.bold, fontSize: 12 },
+  notifRescheduleBtnText: { color: colors.ink, fontFamily: fonts.bold, fontSize: 12 },
   markReadSingleBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     paddingVertical: 4,
     paddingHorizontal: 8,
-    borderRadius: 8,
-    backgroundColor: "#E0E7FF",
+    borderRadius: 999,
+    backgroundColor: colors.lavender,
     alignSelf: "flex-end",
     marginLeft: "auto",
   },
-  markReadSingleText: { fontSize: 11, fontFamily: fonts.semiBold, color: "#001166" },
+  markReadSingleText: { fontSize: 11, fontFamily: fonts.semiBold, color: colors.accent },
   emptyNotifBox: { alignItems: "center", paddingVertical: 40 },
-  emptyNotifText: { color: "#9CA3AF", fontFamily: fonts.medium, fontSize: 14, marginTop: 10 },
+  emptyNotifText: { color: colors.muted, fontFamily: fonts.medium, fontSize: 14, marginTop: 10 },
 });

@@ -1,3 +1,5 @@
+import ScreenBackground from '../components/ScreenBackground';
+import { colors } from '../theme/colors';
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -13,7 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { fonts } from "../theme/fonts";
 import { API_BASE_URL } from "../config/config";
-import ScreenHeader from "../components/ScreenHeader"; 
+import ScreenHeader from "../components/ScreenHeader";
 
 export default function ChangePasswordScreen({ navigation }) {
   const [currentUser, setCurrentUser] = useState(null);
@@ -160,16 +162,17 @@ export default function ChangePasswordScreen({ navigation }) {
   if (loading) {
     return (
       <View style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
-        <ActivityIndicator size="large" color="#001166" />
+        <ActivityIndicator size="large" color={colors.accent} />
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
+      <ScreenBackground />
       <ScreenHeader title="Change Password" showBack={true} />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <View style={styles.form}>
           <Text style={styles.label}>Current Password</Text>
           <PasswordInput
@@ -218,11 +221,11 @@ export default function ChangePasswordScreen({ navigation }) {
           {errors.confirm && <Error text={errors.confirm} />}
 
           <View style={styles.buttonContainer}>
-            <TouchableOpacity style={styles.saveBtn} onPress={handleRequestOtp} disabled={saving}>
-              {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Verify & Update</Text>}
+            <TouchableOpacity accessibilityRole="button" style={styles.saveBtn} onPress={handleRequestOtp} disabled={saving}>
+              {saving ? <ActivityIndicator color={colors.ink} /> : <Text style={styles.saveText}>Verify & Update</Text>}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => navigation.goBack()} disabled={saving}>
+            <TouchableOpacity accessibilityRole="button" style={styles.cancelBtn} onPress={() => navigation.goBack()} disabled={saving}>
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -235,17 +238,17 @@ export default function ChangePasswordScreen({ navigation }) {
 function PasswordInput({ value, setValue, show, setShow, placeholder }) {
   return (
     <View style={styles.inputContainer}>
-      <Ionicons name="lock-closed-outline" size={20} color="#9CA3AF" />
+      <Ionicons name="lock-closed-outline" size={20} color={colors.muted} />
       <TextInput
         placeholder={placeholder}
-        placeholderTextColor="#9CA3AF"
+        placeholderTextColor={colors.muted}
         secureTextEntry={!show}
         style={styles.input}
         value={value}
         onChangeText={setValue}
       />
-      <TouchableOpacity onPress={() => setShow(!show)} style={styles.eyeBtn}>
-        <Ionicons name={show ? "eye-off-outline" : "eye-outline"} size={20} color="#6B7280" />
+      <TouchableOpacity accessibilityLabel="Show or hide password" hitSlop={8} accessibilityRole="button" onPress={() => setShow(!show)} style={styles.eyeBtn}>
+        <Ionicons name={show ? "eye-off-outline" : "eye-outline"} size={20} color={colors.muted} />
       </TouchableOpacity>
     </View>
   );
@@ -257,7 +260,7 @@ function Rule({ label, valid }) {
       <Ionicons
         name={valid ? "checkmark-circle" : "ellipse-outline"}
         size={16}
-        color={valid ? "#059669" : "#9CA3AF"}
+        color={valid ? "#059669" : colors.muted}
       />
       <Text style={[styles.ruleText, valid && { color: "#059669", fontFamily: fonts.semiBold }]}>
         {label}
@@ -269,22 +272,22 @@ function Rule({ label, valid }) {
 const Error = ({ text }) => <Text style={styles.error}>{text}</Text>;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F9FAFB" },
-  scrollContent: { paddingBottom: 40 },
-  form: { padding: 24 },
-  label: { marginBottom: 8, fontFamily: fonts.bold, color: "#374151", fontSize: 13, marginLeft: 4 },
+  container: { flex: 1, backgroundColor: colors.canvas },
+  scrollContent: { paddingBottom: 40 , maxWidth: 680, width: '100%', alignSelf: 'center' },
+  form: { padding: 24 , maxWidth: 680, width: '100%', alignSelf: 'center' },
+  label: { marginBottom: 8, fontFamily: fonts.bold, color: colors.ink, fontSize: 13, marginLeft: 4 },
   spacer: { height: 16 },
-  inputContainer: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 16, paddingHorizontal: 16, height: 56 },
-  input: { flex: 1, marginLeft: 12, fontFamily: fonts.medium, color: "#111827", fontSize: 14 },
+  inputContainer: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 16, paddingHorizontal: 16, height: 56 },
+  input: { flex: 1, marginLeft: 12, fontFamily: fonts.medium, color: colors.ink, fontSize: 14 },
   eyeBtn: { padding: 4 },
   error: { color: "#DC2626", fontSize: 12, marginTop: 6, marginLeft: 12, fontFamily: fonts.medium },
-  rulesBox: { backgroundColor: "#E0E7FF", borderRadius: 18, padding: 16, marginTop: 12, borderWidth: 1, borderColor: "#C7D2FF" },
-  rulesTitle: { fontSize: 13, fontFamily: fonts.bold, color: "#001166", marginBottom: 10 },
+  rulesBox: { backgroundColor: colors.lavender, borderRadius: 18, padding: 16, marginTop: 12, borderWidth: 1, borderColor: colors.border },
+  rulesTitle: { fontSize: 13, fontFamily: fonts.bold, color: colors.accent, marginBottom: 10 },
   ruleRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
-  ruleText: { marginLeft: 8, fontSize: 12, color: "#6B7280", fontFamily: fonts.regular },
+  ruleText: { marginLeft: 8, fontSize: 12, color: colors.muted, fontFamily: fonts.regular },
   buttonContainer: { marginTop: 32, gap: 12 },
-  saveBtn: { backgroundColor: "#001166", height: 56, borderRadius: 999, justifyContent: "center", alignItems: "center", elevation: 2 },
-  saveText: { color: "#FFFFFF", fontSize: 16, fontFamily: fonts.bold },
-  cancelBtn: { height: 56, borderRadius: 999, justifyContent: "center", alignItems: "center", backgroundColor: "#F3F4F6" },
-  cancelText: { fontSize: 16, fontFamily: fonts.bold, color: "#4B5563" },
+  saveBtn: { backgroundColor: colors.primary, height: 56, borderRadius: 999, justifyContent: "center", alignItems: "center", elevation: 2 },
+  saveText: { color: colors.ink, fontSize: 16, fontFamily: fonts.bold },
+  cancelBtn: { height: 56, borderRadius: 999, justifyContent: "center", alignItems: "center", backgroundColor: colors.aquaSoft },
+  cancelText: { fontSize: 16, fontFamily: fonts.bold, color: colors.muted },
 });

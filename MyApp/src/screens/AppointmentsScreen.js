@@ -1,3 +1,7 @@
+import { requestJson, requireArray, fileUrl, displayDate } from '../utils/patientData';
+import LoadError from '../components/LoadError';
+import ScreenBackground from '../components/ScreenBackground';
+import { colors } from '../theme/colors';
 import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
@@ -23,6 +27,7 @@ const ITEMS_PER_PAGE = 5;
 export default function AppointmentsScreen({ navigation }) {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("All");
   const [page, setPage] = useState(1);
@@ -40,32 +45,21 @@ export default function AppointmentsScreen({ navigation }) {
 
   const fetchAppointments = async () => {
     setLoading(true);
+    setLoadError('');
     try {
-      const email = await AsyncStorage.getItem("userEmail");
-      let userId = null;
-
-      const storedUser = await AsyncStorage.getItem("userData");
-      if (storedUser) {
-        const parsed = JSON.parse(storedUser);
-        if (parsed?.id) userId = parsed.id;
+      const stored = await AsyncStorage.getItem('userData');
+      const user = stored ? JSON.parse(stored) : null;
+      let id = user?.id || user?.user_id;
+      if (!id) {
+        const email = await AsyncStorage.getItem('userEmail');
+        if (email) id = (await requestJson(`${API_BASE_URL}/api/user-profile?email=${encodeURIComponent(email)}`)).id;
       }
-
-      if (!userId && email) {
-        const userRes = await fetch(`${API_BASE_URL}/api/user-profile?email=${encodeURIComponent(email)}`);
-        const userData = await userRes.json();
-        if (userRes.ok && userData.id) userId = userData.id;
-      }
-
-      if (userId) {
-        const aptRes = await fetch(`${API_BASE_URL}/api/user-appointments/${userId}`);
-        const aptData = await aptRes.json();
-        setAppointments(Array.isArray(aptData) ? aptData : aptData.appointments || []);
-      }
+      if (!id) throw new Error('Could not identify your account. Please log in again.');
+      const data = await requestJson(`${API_BASE_URL}/api/user-appointments/${encodeURIComponent(id)}`);
+      setAppointments(requireArray(data, 'appointments'));
     } catch (error) {
-      console.error("Failed to fetch appointments", error);
-    } finally {
-      setLoading(false);
-    }
+      setLoadError(error.message || 'Unable to load your records. Please try again.');
+    } finally { setLoading(false); }
   };
 
   useFocusEffect(
@@ -81,7 +75,7 @@ export default function AppointmentsScreen({ navigation }) {
   const filteredData = appointments.filter((item) => {
     const rawStatus = (item.status || "").trim().toLowerCase();
     const filterLower = activeFilter.toLowerCase();
-    const matchesFilter = activeFilter === "All" || rawStatus === filterLower;
+    const matchesFilter = activeFilter === "All" || rawStatus === filterLower || (filterLower === 'confirmed' && rawStatus === 'approved');
 
     const formattedDate = new Date(item.appointment_date).toLocaleDateString("en-US", {
       month: "short",
@@ -89,7 +83,7 @@ export default function AppointmentsScreen({ navigation }) {
       year: "numeric",
     });
     const searchLower = searchQuery.toLowerCase();
-    const branchName = (item.branch || item.branch_address || "2015 Gil Puyat, Pasay City").toLowerCase();
+    const branchName = (item.branch || item.branch_address || "").toLowerCase();
 
     const matchesSearch =
       item.dentist_name?.toLowerCase().includes(searchLower) ||
@@ -156,6 +150,7 @@ export default function AppointmentsScreen({ navigation }) {
   const getStatusBadgeStyle = (status = "") => {
     switch (status.trim().toLowerCase()) {
       case "confirmed":
+      case "approved":
         return { bg: styles.confirmedBg, text: styles.confirmedText };
       case "pending":
         return { bg: styles.pendingBg, text: styles.pendingText };
@@ -177,13 +172,13 @@ export default function AppointmentsScreen({ navigation }) {
       year: "numeric",
     });
 
-    const displayAddress = item.branch || item.branch_address || "Gil Puyat, Pasay";
-    const statusNormalized = item.status ? item.status.trim() : "Pending";
+    const displayAddress = item.branch || item.branch_address || "Branch not provided";
+    const statusNormalized = item.status?.trim().toLowerCase() === 'approved' ? 'Confirmed' : (item.status ? item.status.trim() : "Not provided");
     const statusLower = statusNormalized.toLowerCase();
     const badgeStyle = getStatusBadgeStyle(statusNormalized);
 
     const basePriceDisplay =
-      item.base_price || item.basePrice || item.price || item.service_price;
+      item.base_price ?? item.basePrice ?? item.amount ?? item.price ?? item.service_price;
 
     return (
       <View style={styles.card}>
@@ -200,29 +195,29 @@ export default function AppointmentsScreen({ navigation }) {
         </View>
 
         <View style={styles.infoRow}>
-          <Ionicons name="person-outline" size={14} color="#6B7280" />
+          <Ionicons name="person-outline" size={14} color={colors.muted} />
           <Text style={styles.infoText}>{item.dentist_name}</Text>
         </View>
         <View style={styles.infoRow}>
-          <Ionicons name="location-outline" size={14} color="#6B7280" />
+          <Ionicons name="location-outline" size={14} color={colors.muted} />
           <Text style={styles.infoText} numberOfLines={1}>{displayAddress}</Text>
         </View>
         <View style={styles.infoRow}>
-          <Ionicons name="calendar-outline" size={14} color="#6B7280" />
+          <Ionicons name="calendar-outline" size={14} color={colors.muted} />
           <Text style={styles.infoText}>{formattedDate} • {item.appointment_time}</Text>
         </View>
 
         {basePriceDisplay ? (
           <View style={styles.infoRow}>
-            <Ionicons name="pricetag-outline" size={14} color="#001166" />
+            <Ionicons name="pricetag-outline" size={14} color={colors.accent} />
             <Text style={[styles.infoText, styles.priceText]}>
               Base Price: ₱{Number(basePriceDisplay).toLocaleString()}
             </Text>
           </View>
         ) : null}
 
-        {(statusLower === "pending" || statusLower === "rescheduled") && (
-          <TouchableOpacity
+        {statusLower === "pending" && (
+          <TouchableOpacity accessibilityRole="button"
             onPress={() => {
               setSelectedCancelId(item.id);
               setCancelModalVisible(true);
@@ -235,7 +230,7 @@ export default function AppointmentsScreen({ navigation }) {
         )}
 
         {statusLower === "cancelled" && (
-          <TouchableOpacity
+          <TouchableOpacity accessibilityRole="button"
             onPress={() => navigation.navigate("Booking", { rescheduleId: item.id })}
             style={styles.rescheduleBtn}
             activeOpacity={0.7}
@@ -250,7 +245,7 @@ export default function AppointmentsScreen({ navigation }) {
   const renderFooter = () => {
     if (displayedData.length >= filteredData.length) return null;
     return (
-      <TouchableOpacity style={styles.loadMoreBtn} onPress={loadMoreData} activeOpacity={0.7}>
+      <TouchableOpacity accessibilityRole="button" style={styles.loadMoreBtn} onPress={loadMoreData} activeOpacity={0.7}>
         <Text style={styles.loadMoreText}>Load More</Text>
       </TouchableOpacity>
     );
@@ -258,11 +253,12 @@ export default function AppointmentsScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      <ScreenBackground />
       <ScreenHeader title="My Appointments" />
 
       <View style={styles.searchBar}>
-        <Ionicons name="search-outline" size={18} color="#9CA3AF" />
-        <TextInput
+        <Ionicons name="search-outline" size={18} color={colors.muted} />
+        <TextInput accessibilityLabel="Search date, time, dentist..."
           placeholder="Search date, time, dentist..."
           style={styles.searchInput}
           value={searchQuery}
@@ -271,9 +267,9 @@ export default function AppointmentsScreen({ navigation }) {
       </View>
 
       <View style={{ maxHeight: 44, marginBottom: 12 }}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterList}>
+        <ScrollView keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterList}>
           {FILTERS.map((f) => (
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button"
               key={f}
               onPress={() => setActiveFilter(f)}
               style={[styles.chip, activeFilter === f && styles.activeChip]}
@@ -286,9 +282,9 @@ export default function AppointmentsScreen({ navigation }) {
 
       {loading && page === 1 ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#001166" />
+          <ActivityIndicator size="large" color={colors.accent} />
         </View>
-      ) : (
+      ) : loadError ? (<LoadError message={loadError} onRetry={fetchAppointments} />) : (
         <FlatList
           data={displayedData}
           keyExtractor={(item) => item.id.toString()}
@@ -299,7 +295,7 @@ export default function AppointmentsScreen({ navigation }) {
         />
       )}
 
-      <TouchableOpacity
+      <TouchableOpacity accessibilityRole="button"
         style={styles.bookBtn}
         onPress={() => navigation.navigate("Booking")}
         activeOpacity={0.85}
@@ -335,41 +331,41 @@ export default function AppointmentsScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#FFFFFF" },
+  container: { flex: 1, backgroundColor: colors.canvas },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F3F4F6",
+    backgroundColor: colors.aquaSoft,
     margin: 16,
     paddingHorizontal: 14,
     borderRadius: 20,
     height: 48,
   },
-  searchInput: { flex: 1, marginLeft: 8, fontFamily: fonts.regular, fontSize: 14, color: "#111827" },
+  searchInput: { flex: 1, marginLeft: 8, fontFamily: fonts.regular, fontSize: 14, color: colors.ink },
   filterList: { paddingHorizontal: 16, gap: 8 },
   chip: {
     paddingHorizontal: 18,
     paddingVertical: 8,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: colors.border,
     justifyContent: "center",
   },
-  activeChip: { backgroundColor: "#001166", borderColor: "#001166" },
-  chipText: { fontFamily: fonts.medium, fontSize: 12, color: "#6B7280" },
-  activeChipText: { color: "#FFFFFF" },
+  activeChip: { backgroundColor: colors.primary, borderColor: colors.accent },
+  chipText: { fontFamily: fonts.medium, fontSize: 12, color: colors.muted },
+  activeChipText: { color: colors.ink },
   card: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 24,
+    backgroundColor: colors.input,
+    borderRadius: 28,
     padding: 20,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: colors.border,
   },
   cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 },
-  idText: { fontSize: 10, color: "#9CA3AF", fontFamily: fonts.bold, marginBottom: 2 },
-  service: { fontSize: 17, fontFamily: fonts.semiBold, color: "#111827" },
+  idText: { fontSize: 10, color: colors.muted, fontFamily: fonts.bold, marginBottom: 2 },
+  service: { fontSize: 17, fontFamily: fonts.semiBold, color: colors.ink },
   statusBadge: {
     paddingHorizontal: 12,
     paddingVertical: 5,
@@ -387,18 +383,18 @@ const styles = StyleSheet.create({
   cancelledText: { color: "#991B1B" },
   rescheduledBg: { backgroundColor: "#EDE9FE" },
   rescheduledText: { color: "#5B21B6" },
-  completedBg: { backgroundColor: "#DBEAFE" },
-  completedText: { color: "#1E40AF" },
-  defaultBadgeBg: { backgroundColor: "#F3F4F6" },
-  defaultBadgeText: { color: "#4B5563" },
+  completedBg: { backgroundColor: colors.completedSoft },
+  completedText: { color: colors.completed },
+  defaultBadgeBg: { backgroundColor: colors.aquaSoft },
+  defaultBadgeText: { color: colors.muted },
   infoRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 6 },
-  infoText: { fontSize: 13, color: "#4B5563", fontFamily: fonts.medium, flexShrink: 1 },
-  priceText: { color: "#001166", fontFamily: fonts.bold },
+  infoText: { fontSize: 13, color: colors.muted, fontFamily: fonts.medium, flexShrink: 1 },
+  priceText: { color: colors.accent, fontFamily: fonts.bold },
   cancelBtn: {
     marginTop: 14,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     padding: 12,
-    borderRadius: 18,
+    borderRadius: 999,
     alignItems: "center",
     borderWidth: 1,
     borderColor: "#FCA5A5",
@@ -408,37 +404,37 @@ const styles = StyleSheet.create({
     marginTop: 14,
     backgroundColor: "#F5F8FF",
     padding: 12,
-    borderRadius: 18,
+    borderRadius: 999,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#001166",
+    borderColor: colors.accent,
   },
-  rescheduleText: { color: "#001166", fontFamily: fonts.bold, fontSize: 13 },
+  rescheduleText: { color: colors.accent, fontFamily: fonts.bold, fontSize: 13 },
   bookBtn: {
     position: "absolute",
     bottom: 20,
     left: 20,
     right: 20,
-    backgroundColor: "#001166",
+    backgroundColor: colors.primary,
     padding: 18,
     borderRadius: 999,
     alignItems: "center",
-    elevation: 4,
+    elevation: 3,
   },
-  bookText: { color: "#FFFFFF", fontFamily: fonts.bold, fontSize: 16 },
-  empty: { textAlign: "center", marginTop: 40, color: "#9CA3AF", fontFamily: fonts.medium },
+  bookText: { color: colors.ink, fontFamily: fonts.bold, fontSize: 16 },
+  empty: { textAlign: "center", marginTop: 40, color: colors.muted, fontFamily: fonts.medium },
   loadMoreBtn: {
     paddingVertical: 14,
-    backgroundColor: "#F3F4F6",
-    borderRadius: 18,
+    backgroundColor: colors.aquaSoft,
+    borderRadius: 999,
     alignItems: "center",
     marginTop: 10,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: colors.border,
   },
   loadMoreText: {
-    color: "#001166",
+    color: colors.accent,
     fontFamily: fonts.semiBold,
     fontSize: 14,
   },

@@ -1,5 +1,6 @@
 import React from "react";
-import { NavigationContainer } from "@react-navigation/native";
+import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
+import { colors } from '../theme/colors';
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
 import AuthGate from "./AuthGate";
@@ -8,7 +9,7 @@ import MainTabNavigator from "./MainTabNavigator";
 import LoginScreen from "../screens/LoginScreen";
 import RegisterScreen from "../screens/RegisterScreen";
 import ForgotPasswordScreen from "../screens/ForgotPasswordScreen";
-import ResetPasswordScreen from "../screens/ResetPasswordScreen"; 
+import ResetPasswordScreen from "../screens/ResetPasswordScreen";
 import OtpVerificationScreen from "../screens/OtpVerificationScreen";
 import BookingScreen from "../screens/BookingScreen";
 import SplashScreen from "../screens/SplashScreen";
@@ -20,16 +21,16 @@ const linking = {
   prefixes: ['oravista://'],
   config: {
     screens: {
-      ResetPassword: 'reset-password', 
+      ResetPassword: 'reset-password',
     },
   },
 };
 
 export default function AppNavigator() {
   return (
-    <NavigationContainer linking={linking}>
-      <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Splash">
-        
+    <NavigationContainer linking={linking} theme={{ ...DefaultTheme, colors: { ...DefaultTheme.colors, primary: colors.accent, background: colors.canvas, card: colors.surface, text: colors.ink, border: colors.border } }}>
+      <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.canvas } }} initialRouteName="Splash">
+
         <Stack.Screen name="Splash" component={SplashScreen} />
         <Stack.Screen name="Landing" component={LandingScreen} />
         <Stack.Screen name="AuthGate" component={AuthGate} />
@@ -37,9 +38,9 @@ export default function AppNavigator() {
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Register" component={RegisterScreen} />
         <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-        <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} /> 
-        
-        <Stack.Screen name="OtpVerification" component={OtpVerificationScreen} /> 
+        <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+
+        <Stack.Screen name="OtpVerification" component={OtpVerificationScreen} />
 
         <Stack.Screen name="Home" component={MainTabNavigator} />
         <Stack.Screen name="Booking" component={BookingScreen} />
