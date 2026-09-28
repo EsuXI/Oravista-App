@@ -2,7 +2,7 @@ import { requestJson, requireArray, fileUrl, displayDate } from '../utils/patien
 import LoadError from '../components/LoadError';
 import ScreenBackground from '../components/ScreenBackground';
 import { colors } from '../theme/colors';
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -22,6 +22,14 @@ import ScreenHeader from "../components/ScreenHeader";
 import CustomAlertModal from "../components/CustomAlertModal";
 import { API_BASE_URL } from "../config/config";
 
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import {
+  withRecordKeys, fetchPatientHealth, fetchFinalDiagnoses, finalFindings,
+  clinicalNotes, healthRows, riskRows, riskAnalysis, recordText,
+  fetchMedicalReport, medicalReportHtml,
+} from '../utils/patientRecords';
+
 const CATEGORIES = ["All", "PDF", "Images", "Other files"];
 const ITEMS_PER_PAGE = 4;
 
@@ -33,6 +41,16 @@ export default function RecordsScreen() {
   const [loadError, setLoadError] = useState('');
   const [page, setPage] = useState(1);
 
+  const [patient, setPatient] = useState(null);
+  const [analytics, setAnalytics] = useState(null);
+  const [risk, setRisk] = useState(null);
+  const [diagnoses, setDiagnoses] = useState([]);
+  const [sectionErrors, setSectionErrors] = useState({});
+  const [generatingReport, setGeneratingReport] = useState(false);
+  const requestVersion = useRef(0);
+  const reportBusy = useRef(false);
+  const [diagnosisPage, setDiagnosisPage] = useState(1);
+
   // Alert State
   const [alertConfig, setAlertConfig] = useState({
     visible: false,
@@ -42,46 +60,103 @@ export default function RecordsScreen() {
     onPrimaryPress: () => {},
   });
 
-  const fetchRecords = async () => {
+  const fetchRecords = useCallback(async () => {
+    const version = ++requestVersion.current;
     setLoading(true);
     setLoadError('');
+    setSectionErrors({});
+    setPatient(null);
+    setRecords([]);
+    setDiagnoses([]);
+    setAnalytics(null);
+    setRisk(null);
+    setPage(1);
+    setDiagnosisPage(1);
     try {
       const stored = await AsyncStorage.getItem('userData');
-      const user = stored ? JSON.parse(stored) : null;
+      let user = stored ? JSON.parse(stored) : null;
       let id = user?.id || user?.user_id;
       if (!id) {
         const email = await AsyncStorage.getItem('userEmail');
-        if (email) id = (await requestJson(`${API_BASE_URL}/api/user-profile?email=${encodeURIComponent(email)}`)).id;
+        if (email) {
+          user = await requestJson(`${API_BASE_URL}/api/user-profile?email=${encodeURIComponent(email)}`);
+          id = user.id;
+        }
       }
       if (!id) throw new Error('Could not identify your account. Please log in again.');
-      const data = await requestJson(`${API_BASE_URL}/api/patient-records/${encodeURIComponent(id)}`);
-      setRecords(requireArray(data, undefined));
+      const results = await Promise.allSettled([
+        requestJson(`${API_BASE_URL}/api/patient-records/${encodeURIComponent(id)}`)
+          .then(data => withRecordKeys(requireArray(data))),
+        fetchPatientHealth(id, 'analytics'),
+        fetchPatientHealth(id, 'oral-health-risk'),
+        fetchFinalDiagnoses(id),
+      ]);
+      if (version !== requestVersion.current) return;
+      setPatient({ ...user, id });
+      const errors = {};
+      const setters = [setRecords, setAnalytics, setRisk, setDiagnoses];
+      const keys = ['attachments', 'analytics', 'risk', 'diagnoses'];
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') setters[index](result.value);
+        else errors[keys[index]] = result.reason?.message || 'Unable to load this section. Please try again.';
+      });
+      setSectionErrors(errors);
     } catch (error) {
-      setLoadError(error.message || 'Unable to load your records. Please try again.');
-    } finally { setLoading(false); }
-  };
+      if (version === requestVersion.current) setLoadError(error.message || 'Unable to load your records. Please try again.');
+    } finally {
+      if (version === requestVersion.current) setLoading(false);
+    }
+  }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchRecords();
-    }, [])
-  );
+  useFocusEffect(useCallback(() => {
+    fetchRecords();
+    return () => { requestVersion.current++; };
+  }, [fetchRecords]));
+
+  const handleGenerateReport = async () => {
+    if (!patient?.id || reportBusy.current) return;
+    reportBusy.current = true;
+    setGeneratingReport(true);
+    const version = requestVersion.current;
+    try {
+      if (!(await Sharing.isAvailableAsync())) throw new Error('Saving or sharing PDFs is not available on this device.');
+      const data = await fetchMedicalReport(patient.id);
+      if (version !== requestVersion.current) return;
+      const patientName = [patient.firstName || patient.first_name, patient.lastName || patient.last_name]
+        .filter(value => typeof value === 'string' && value.trim()).join(' ') || 'Patient';
+      const { uri } = await Print.printToFileAsync({
+        html: medicalReportHtml(patientName, data), width: 595, height: 842,
+      });
+      if (version !== requestVersion.current) return;
+      await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: '.pdf', dialogTitle: 'Save or share your OraVista medical report' });
+    } catch (error) {
+      if (version === requestVersion.current) setAlertConfig({
+        visible: true, type: 'error', title: 'Could Not Generate Report',
+        message: error.message || 'Please try again.',
+        onPrimaryPress: () => setAlertConfig(prev => ({ ...prev, visible: false })),
+      });
+    } finally {
+      reportBusy.current = false;
+      setGeneratingReport(false);
+    }
+  };
 
   useEffect(() => {
     setPage(1);
+    setDiagnosisPage(1);
   }, [searchQuery, activeCategory]);
 
   const filteredRecords = records.filter((rec) => {
     const searchLower = searchQuery.toLowerCase();
-    const nameLower = (rec.file_name || "").toLowerCase();
+    const nameLower = recordText(rec.file_name, "").toLowerCase();
     const formattedDate = displayDate(rec.upload_date);
-    const branchName = (rec.clinic_branch || "").toLowerCase();
-    const doctorName = (rec.dentist_name || "").toLowerCase();
+    const branchName = recordText(rec.clinic_branch, "").toLowerCase();
+    const doctorName = recordText(rec.dentist_name, "").toLowerCase();
 
     const matchesSearch =
       nameLower.includes(searchLower) ||
       (rec.id || "").toString().includes(searchLower) ||
-      formattedDate.includes(searchLower) ||
+      formattedDate.toLowerCase().includes(searchLower) ||
       branchName.includes(searchLower) ||
       doctorName.includes(searchLower);
 
@@ -127,15 +202,15 @@ export default function RecordsScreen() {
   };
 
   const renderItem = ({ item }) => {
-    const displayAddress = item.clinic_branch || "Branch not provided";
-    const displayDoctor = item.dentist_name || "Dentist not provided";
+    const displayAddress = recordText(item.clinic_branch, "Branch not provided");
+    const displayDoctor = recordText(item.dentist_name, "Dentist not provided");
 
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <View style={styles.typeBox}>
             <Text style={styles.type}>Medical Record</Text>
-            <Text style={styles.recordId}> • REC-{(item.id || 0).toString().padStart(3, "0")}</Text>
+            {item.id != null && <Text style={styles.recordId}> • REC-{String(item.id).padStart(3, "0")}</Text>}
           </View>
           <TouchableOpacity accessibilityLabel="Download document" hitSlop={8} accessibilityRole="button"
             style={styles.downloadBtn}
@@ -145,7 +220,7 @@ export default function RecordsScreen() {
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.title}>{item.file_name || "Diagnostic File"}</Text>
+        <Text style={styles.title}>{recordText(item.file_name, "Diagnostic File")}</Text>
 
         <View style={{ marginTop: 12, marginBottom: 14 }}>
           <View style={styles.infoRow}>
@@ -171,6 +246,66 @@ export default function RecordsScreen() {
       </View>
     );
   };
+
+  const visibleDiagnoses = diagnoses.filter(record =>
+    [record.id, displayDate(record.scan_date), clinicalNotes(record), ...finalFindings(record)]
+      .join(' ').toLowerCase().includes(searchQuery.trim().toLowerCase())
+  );
+
+  const renderRows = rows => rows.map(([label, value]) => (
+    <View key={label} style={styles.resultRow}>
+      <Text style={styles.resultLabel}>{label}</Text>
+      <Text style={styles.resultText}>{value}</Text>
+    </View>
+  ));
+
+  const renderSectionError = key => (
+    <LoadError message={sectionErrors[key]} onRetry={fetchRecords} />
+  );
+
+  const reportHeader = (
+    <View>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Generate medical report PDF"
+        accessibilityState={{ disabled: generatingReport || !patient?.id }}
+        disabled={generatingReport || !patient?.id} onPress={handleGenerateReport}
+        style={[styles.reportButton, generatingReport && styles.disabledButton]}>
+        {generatingReport ? <ActivityIndicator color={colors.accent} /> : <Ionicons name="document-text-outline" size={20} color={colors.accent} />}
+        <Text style={styles.loadMoreText}>{generatingReport ? 'Generating Report…' : 'Generate Medical Report PDF'}</Text>
+      </TouchableOpacity>
+      <View style={styles.card}>
+        <Text style={styles.title}>Health Context &amp; Lifestyle</Text>
+        {sectionErrors.analytics ? renderSectionError('analytics') : renderRows(healthRows(analytics))}
+      </View>
+      <View style={styles.card}>
+        <Text style={styles.title}>AI Assessment</Text>
+        {sectionErrors.risk ? renderSectionError('risk') : <>
+          {renderRows(riskRows(risk))}
+          {renderRows(riskAnalysis(risk))}
+        </>}
+      </View>
+      <Text style={styles.sectionTitle}>Dentist-Saved Final Diagnoses</Text>
+      {sectionErrors.diagnoses ? renderSectionError('diagnoses') : <>
+        {!visibleDiagnoses.length && <Text style={styles.sectionEmpty}>{diagnoses.length ? 'No matching final diagnoses.' : 'No dentist-saved final diagnoses are available yet.'}</Text>}
+        {visibleDiagnoses.slice(0, diagnosisPage * ITEMS_PER_PAGE).map(record => (
+          <View key={record.recordKey} style={styles.card}>
+            <Text style={styles.title}>Final Diagnosis{record.id != null ? ` #${recordText(record.id)}` : ''}</Text>
+            <Text style={styles.resultText}>Scan date: {displayDate(record.scan_date)}</Text>
+            <Text style={styles.resultLabel}>Final Findings Saved by the Dentist</Text>
+            {finalFindings(record).map((finding, index) => <Text key={index} style={styles.finding}>• {finding}</Text>)}
+            <Text style={styles.resultLabel}>Dentist’s Clinical Notes</Text>
+            <Text style={styles.resultText}>{clinicalNotes(record)}</Text>
+          </View>
+        ))}
+        {visibleDiagnoses.length > diagnosisPage * ITEMS_PER_PAGE && (
+          <TouchableOpacity accessibilityRole="button" style={styles.loadMoreBtn} onPress={() => setDiagnosisPage(value => value + 1)}>
+            <Text style={styles.loadMoreText}>Load More Diagnoses</Text>
+          </TouchableOpacity>
+        )}
+      </>}
+      <Text style={styles.sectionTitle}>Attached Files</Text>
+      {sectionErrors.attachments ? renderSectionError('attachments') : null}
+    </View>
+  );
 
   const renderFooter = () => {
     if (displayedData.length >= filteredRecords.length) return null;
@@ -220,12 +355,13 @@ export default function RecordsScreen() {
       ) : loadError ? (<LoadError message={loadError} onRetry={fetchRecords} />) : (
         <FlatList
           data={displayedData}
-          keyExtractor={(item) => item.id.toString()}
+          keyExtractor={(item) => item.recordKey}
+          ListHeaderComponent={reportHeader}
           renderItem={renderItem}
           contentContainerStyle={styles.content}
-          ListEmptyComponent={
+          ListEmptyComponent={sectionErrors.attachments ? null :
             <View style={styles.centerContainer}>
-              <Text style={styles.emptyText}>No medical records found.</Text>
+              <Text style={styles.emptyText}>No attached files found.</Text>
             </View>
           }
           ListFooterComponent={renderFooter}
@@ -246,6 +382,14 @@ export default function RecordsScreen() {
 }
 
 const styles = StyleSheet.create({
+  reportButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16, borderRadius: 20, marginBottom: 16, backgroundColor: colors.aquaSoft, borderWidth: 1, borderColor: colors.border },
+  disabledButton: { opacity: 0.6 },
+  sectionTitle: { fontSize: 16, fontFamily: fonts.bold, color: colors.ink, marginBottom: 14 },
+  sectionEmpty: { fontSize: 13, fontFamily: fonts.regular, color: colors.muted, marginBottom: 20, lineHeight: 21 },
+  resultRow: { marginTop: 10, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: colors.border },
+  resultLabel: { fontFamily: fonts.semiBold, fontSize: 13, color: colors.ink, marginTop: 10, marginBottom: 6 },
+  resultText: { fontFamily: fonts.regular, fontSize: 13, color: colors.muted, lineHeight: 22 },
+  finding: { fontFamily: fonts.regular, fontSize: 13, color: colors.ink, lineHeight: 22, marginBottom: 6 },
   container: { flex: 1, backgroundColor: colors.canvas },
   searchContainer: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, marginHorizontal: 16, marginTop: 16, paddingHorizontal: 14, height: 48, borderRadius: 20, borderWidth: 1, borderColor: colors.border },
   searchInput: { flex: 1, marginLeft: 8, fontFamily: fonts.regular, fontSize: 14, color: colors.ink },
