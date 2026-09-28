@@ -21,7 +21,7 @@ import { API_BASE_URL } from "../config/config";
 import ScreenHeader from "../components/ScreenHeader";
 import CustomAlertModal from "../components/CustomAlertModal";
 
-const FILTERS = ["All", "Confirmed", "Pending", "Rescheduled", "Completed", "Cancelled"];
+const FILTERS = ["All", "Confirmed", "Pending", "Reschedule Requested", "Rescheduled", "Late / No Show", "Completed", "Cancelled"];
 const ITEMS_PER_PAGE = 5;
 
 export default function AppointmentsScreen({ navigation }) {
@@ -156,6 +156,7 @@ export default function AppointmentsScreen({ navigation }) {
         return { bg: styles.pendingBg, text: styles.pendingText };
       case "cancelled":
         return { bg: styles.cancelledBg, text: styles.cancelledText };
+      case "reschedule requested":
       case "rescheduled":
         return { bg: styles.rescheduledBg, text: styles.rescheduledText };
       case "completed":
@@ -207,6 +208,17 @@ export default function AppointmentsScreen({ navigation }) {
           <Text style={styles.infoText}>{formattedDate} • {item.appointment_time}</Text>
         </View>
 
+        {statusLower === 'reschedule requested' && (
+          <View style={styles.infoRow}>
+            <Ionicons name="calendar-outline" size={14} color={colors.accent} />
+            <Text style={styles.infoText}>
+              Requested: {item.reschedule_requested_date
+                ? new Date(`${String(item.reschedule_requested_date).slice(0, 10)}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
+                : 'Date not provided'} • {item.reschedule_requested_time || 'Time not provided'} — Awaiting clinic approval
+            </Text>
+          </View>
+        )}
+
         {basePriceDisplay ? (
           <View style={styles.infoRow}>
             <Ionicons name="pricetag-outline" size={14} color={colors.accent} />
@@ -229,7 +241,7 @@ export default function AppointmentsScreen({ navigation }) {
           </TouchableOpacity>
         )}
 
-        {statusLower === "cancelled" && (
+        {["Confirmed", "Late / No Show"].includes(item.status) && (
           <TouchableOpacity accessibilityRole="button"
             onPress={() => navigation.navigate("Booking", { rescheduleId: item.id })}
             style={styles.rescheduleBtn}

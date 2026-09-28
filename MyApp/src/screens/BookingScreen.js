@@ -4,7 +4,7 @@ import LoadError from '../components/LoadError';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenBackground from '../components/ScreenBackground';
 import { colors } from '../theme/colors';
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -26,6 +26,40 @@ const parseNumericBasePrice = (priceStr) => {
   if (!priceStr) return 0;
   const match = priceStr.replace(/,/g, "").match(/\d+/);
   return match ? parseInt(match[0], 10) : 0;
+};
+
+// Match stored web service names when loading an existing appointment on mobile.
+const rescheduleServiceDetails = (appointment) => {
+  const aliases = {
+    'Braces Installation': 'Orthodontics Installation',
+    'Braces Adjustment': 'Orthodontics Adjustment',
+    Veneers: 'Veneers / Esthetics',
+    'Root Canal (RCT)': 'Root Canal Treatment',
+    'Teeth Whitening': 'Whitening',
+  };
+  const durations = {
+    'Oral Prophylaxis': 30, Restoration: 60, Extraction: 60,
+    'Braces Installation': 60, 'Braces Adjustment': 30, Veneers: 120,
+    'Root Canal (RCT)': 120, 'Wisdom Tooth Surgery': 180, Dentures: 30,
+    'Fixed Bridge': 120, 'Teeth Whitening': 90,
+  };
+  const name = String(appointment.service_type || '').trim();
+  const entry = Object.entries(SERVICE_CATEGORIES).find(([, services]) =>
+    services.some(s => s.name === name || s.name === aliases[name]));
+  const catalogService = entry?.[1].find(s => s.name === name || s.name === aliases[name]);
+  const hours = name.match(/(\d+(?:\.\d+)?)\s*hrs?/i);
+  const minutes = name.match(/(\d+)\s*mins?/i);
+  return {
+    category: entry?.[0] || 'Existing appointment',
+    service: {
+      name,
+      duration: durations[name] || catalogService?.duration ||
+        ((hours ? Number(hours[1]) * 60 : 0) + (minutes ? Number(minutes[1]) : 0)) || 30,
+      price: appointment.amount != null
+        ? `₱${Number(appointment.amount).toLocaleString('en-PH')}`
+        : catalogService?.price || 'Not provided',
+    },
+  };
 };
 
 const generateClinicTimes = (selectedServiceDuration, takenTimes, selectedDate) => {
@@ -87,6 +121,11 @@ export default function BookingScreen({ route, navigation }) {
   const [slotsReady, setSlotsReady] = useState(false);
   const [bookingCreated, setBookingCreated] = useState(false);
   const rescheduleId = route?.params?.rescheduleId;
+  const isReschedule = rescheduleId != null;
+  const [originalAppointment, setOriginalAppointment] = useState(null);
+  const [rescheduleLoading, setRescheduleLoading] = useState(false);
+  const [rescheduleError, setRescheduleError] = useState('');
+  const [rescheduleRetry, setRescheduleRetry] = useState(0);
 
   const [userId, setUserId] = useState(null);
   const [branch, setBranch] = useState(BRANCHES.includes(route?.params?.initialBranch) ? route.params.initialBranch : null);
@@ -113,7 +152,12 @@ export default function BookingScreen({ route, navigation }) {
     onPrimaryPress: () => {},
   });
 
-  const isComplete = branch && category && service && dentist && date && time && slotsReady && !loadingSlots && !slotError && !bookingCreated;
+  const rescheduleReady = !isReschedule || (originalAppointment &&
+    String(originalAppointment.id) === String(rescheduleId) && !rescheduleLoading && !rescheduleError);
+  const unchangedSchedule = isReschedule && originalAppointment && date && time &&
+    dateKey(originalAppointment.appointment_date) === date &&
+    timeMinutes(originalAppointment.appointment_time) === timeMinutes(time);
+  const isComplete = branch && category && service && dentist && date && time && slotsReady && !loadingSlots && !slotError && !bookingCreated && rescheduleReady && !unchangedSchedule;
 
   const today = new Date();
   const minDateString = clinicDate(today);
@@ -121,7 +165,7 @@ export default function BookingScreen({ route, navigation }) {
   maxDate.setMonth(today.getMonth() + 3);
   const maxDateString = clinicDate(maxDate);
 
-  const fetchUserIdAndAppointments = async () => {
+  const fetchUserIdAndAppointments = useCallback(async () => {
     const stored = await AsyncStorage.getItem('userData');
     const parsed = stored ? JSON.parse(stored) : null;
     let currentId = parsed?.id || parsed?.user_id;
@@ -132,20 +176,65 @@ export default function BookingScreen({ route, navigation }) {
     if (!currentId) throw new Error('Could not identify your account. Please log in again.');
     const data = await requestJson(`${API_BASE_URL}/api/user-appointments/${encodeURIComponent(currentId)}`);
     return { currentId, appointments: requireArray(data, 'appointments') };
-  };
+  }, []);
 
-  const fetchTakenTimes = async (selectedDate) => {
+  useEffect(() => {
+    if (!isReschedule) {
+      setOriginalAppointment(null);
+      return;
+    }
+    let active = true;
+    setRescheduleLoading(true);
+    setRescheduleError('');
+    setOriginalAppointment(null);
+    setBookingCreated(false);
+    setDate(null);
+    setTime(null);
+    setOpenDropdown(null);
+    fetchUserIdAndAppointments().then(({ currentId, appointments }) => {
+      if (!active) return;
+      const appointment = appointments.find(a => String(a.id) === String(rescheduleId));
+      if (!appointment) throw new Error('Appointment not found. Return to Visits and refresh.');
+      if (!['Confirmed', 'Late / No Show'].includes(appointment.status)) {
+        throw new Error('Only confirmed or late/no-show appointments can be rescheduled. Return to Visits and refresh.');
+      }
+      if (!appointment.service_type || !appointment.dentist_name) {
+        throw new Error('Appointment details are incomplete. Please contact the clinic.');
+      }
+      const details = rescheduleServiceDetails(appointment);
+      setOriginalAppointment(appointment);
+      setUserId(currentId);
+      setUserAppointments(appointments);
+      setBranch(appointment.branch || 'Main Branch');
+      setCategory(details.category);
+      setService(details.service);
+      setDentist(appointment.dentist_name);
+    }).catch(error => {
+      if (active) setRescheduleError(error.message || 'Unable to load the appointment.');
+    }).finally(() => { if (active) setRescheduleLoading(false); });
+    return () => { active = false; };
+  }, [isReschedule, rescheduleId, rescheduleRetry, fetchUserIdAndAppointments]);
+
+  const fetchTakenTimes = useCallback(async (selectedDate) => {
     const requestId = ++slotRequest.current;
     setTime(null);
     setSlotsReady(false);
     setSlotError('');
-    if (!selectedDate || !dentist) { setLoadingSlots(false); return; }
+    if (!selectedDate || !dentist || (isReschedule && !originalAppointment)) { setLoadingSlots(false); return; }
     setLoadingSlots(true);
     try {
       const [{ currentId, appointments }, data] = await Promise.all([
         fetchUserIdAndAppointments(),
-        requestJson(`${API_BASE_URL}/api/appointments/check-availability?date=${encodeURIComponent(selectedDate)}&dentist=${encodeURIComponent(dentist)}`),
+        requestJson(`${API_BASE_URL}/api/appointments/check-availability?date=${encodeURIComponent(selectedDate)}&dentist=${encodeURIComponent(dentist)}${isReschedule ? `&excludeAppointmentId=${encodeURIComponent(rescheduleId)}` : ''}`),
       ]);
+      if (isReschedule) {
+        const current = appointments.find(a => String(a.id) === String(rescheduleId));
+        if (!current || !['Confirmed', 'Late / No Show'].includes(current.status) ||
+            ['service_type', 'dentist_name', 'branch', 'appointment_date', 'appointment_time'].some(key =>
+              current[key] !== originalAppointment[key])) {
+          throw new Error('This appointment changed. Return to Visits and reopen the reschedule request.');
+        }
+      }
       const slots = requireArray(data, 'bookedTimes');
       if (slots.some(a => timeMinutes(a.appointment_time || a.time) === null)) throw new Error('Availability could not be read. Please retry or contact the clinic.');
       if (requestId !== slotRequest.current) return;
@@ -161,12 +250,12 @@ export default function BookingScreen({ route, navigation }) {
     } finally {
       if (requestId === slotRequest.current) setLoadingSlots(false);
     }
-  };
+  }, [dentist, isReschedule, rescheduleId, originalAppointment, fetchUserIdAndAppointments]);
 
   useEffect(() => {
     fetchTakenTimes(date);
     return () => { slotRequest.current += 1; };
-  }, [date, dentist, branch, service, rescheduleId]);
+  }, [date, branch, service, fetchTakenTimes]);
 
   const handleOpenConfirm = () => {
     if (!isComplete || bookingLoading) return;
@@ -234,6 +323,47 @@ export default function BookingScreen({ route, navigation }) {
       return;
     }
 
+    if (isReschedule) {
+      try {
+        await requestJson(`${API_BASE_URL}/api/request-reschedule`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            appointment_id: originalAppointment.id,
+            user_id: Number(currentUserId),
+            requested_date: date,
+            requested_time: time,
+          }),
+        });
+        setBookingCreated(true);
+        setConfirmModalVisible(false);
+        setAlertConfig({
+          visible: true, type: 'success', title: 'Reschedule Request Submitted',
+          message: 'Your requested date and time are awaiting clinic approval. Your existing schedule remains unchanged until approved.',
+          details: [
+            { label: 'Reference', value: originalAppointment.booking_ref || 'Not provided' },
+            { label: 'Requested Date', value: date },
+            { label: 'Requested Time', value: time },
+          ],
+          onPrimaryPress: () => {
+            setAlertConfig(prev => ({ ...prev, visible: false }));
+            navigation.goBack();
+          },
+        });
+      } catch (error) {
+        setConfirmModalVisible(false);
+        setAlertConfig({
+          visible: true, type: 'error', title: 'Reschedule Request Failed',
+          message: `${error?.message || 'Unable to submit your request.'} Check your Visits list before trying again.`,
+          details: [],
+          onPrimaryPress: () => setAlertConfig(prev => ({ ...prev, visible: false })),
+        });
+      } finally {
+        bookingBusy.current = false;
+        setBookingLoading(false);
+      }
+      return;
+    }
+
     const calculatedBasePrice = parseNumericBasePrice(service.price);
 
     const payload = {
@@ -263,24 +393,15 @@ export default function BookingScreen({ route, navigation }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       });
       setBookingCreated(true);
-      let rescheduleFailed = false;
-      if (rescheduleId) {
-        try {
-          await requestJson(`${API_BASE_URL}/api/update-appointment-status`, {
-            method: 'PUT', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ appointment_id: rescheduleId, status: 'Rescheduled' }),
-          });
-        } catch { rescheduleFailed = true; }
-      }
       setConfirmModalVisible(false);
 
       const bookingReference = resData?.booking_ref || resData?.reference || "Not provided";
 
       setAlertConfig({
         visible: true,
-        type: rescheduleFailed ? "warning" : "success",
-        title: rescheduleFailed ? "New Appointment Booked" : "Appointment Requested",
-        message: rescheduleFailed ? "Your new request was created, but the previous appointment could not be updated. Please review your visits and contact the clinic. Do not submit another booking." : "Your appointment request has been submitted. Please wait for clinic confirmation.",
+        type: "success",
+        title: "Appointment Requested",
+        message: "Your appointment request has been submitted. Please wait for clinic confirmation.",
         details: [
           { label: "Service", value: service.name },
           { label: "Base Price", value: service.price, highlight: true },
@@ -327,13 +448,18 @@ export default function BookingScreen({ route, navigation }) {
   return (
     <View style={styles.container}>
       <ScreenBackground />
-      <ScreenHeader title="Book Appointment" showBack={true} />
+      <ScreenHeader title={isReschedule ? "Reschedule Appointment" : "Book Appointment"} showBack={true} />
 
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {isReschedule && <Text style={styles.helper}>Only the date and time can be changed. The clinic must approve your request.</Text>}
+        {isReschedule && rescheduleLoading && <ActivityIndicator size="small" color={colors.accent} />}
+        {isReschedule && rescheduleError && <LoadError message={rescheduleError} onRetry={() => setRescheduleRetry(value => value + 1)} />}
         {/* BRANCH */}
         <Text style={styles.label}>Select Branch</Text>
         <TouchableOpacity accessibilityRole="button"
           style={styles.dropdown}
+          disabled={isReschedule}
+          accessibilityState={{ disabled: isReschedule }}
           onPress={() => setOpenDropdown(openDropdown === "branch" ? null : "branch")}
         >
           <View style={styles.dropdownRow}>
@@ -342,7 +468,7 @@ export default function BookingScreen({ route, navigation }) {
           </View>
         </TouchableOpacity>
 
-        {openDropdown === "branch" && (
+        {!isReschedule && openDropdown === "branch" && (
           <View style={styles.dropdownList}>
             {BRANCHES.map((b) => (
               <TouchableOpacity accessibilityRole="button"
@@ -367,6 +493,8 @@ export default function BookingScreen({ route, navigation }) {
         <Text style={styles.label}>Select Category</Text>
         <TouchableOpacity accessibilityRole="button"
           style={styles.dropdown}
+          disabled={isReschedule}
+          accessibilityState={{ disabled: isReschedule }}
           onPress={() => setOpenDropdown(openDropdown === "cat" ? null : "cat")}
         >
           <View style={styles.dropdownRow}>
@@ -375,7 +503,7 @@ export default function BookingScreen({ route, navigation }) {
           </View>
         </TouchableOpacity>
 
-        {openDropdown === "cat" && (
+        {!isReschedule && openDropdown === "cat" && (
           <View style={styles.dropdownList}>
             {Object.keys(SERVICE_CATEGORIES).map((c) => (
               <TouchableOpacity accessibilityRole="button"
@@ -402,7 +530,9 @@ export default function BookingScreen({ route, navigation }) {
             <Text style={styles.label}>Choose Service</Text>
             <TouchableOpacity accessibilityRole="button"
               style={styles.dropdown}
-              onPress={() => setOpenDropdown(openDropdown === "srv" ? null : "srv")}
+              disabled={isReschedule}
+          accessibilityState={{ disabled: isReschedule }}
+          onPress={() => setOpenDropdown(openDropdown === "srv" ? null : "srv")}
             >
               <View style={styles.dropdownRow}>
                 <Text style={styles.dropdownText}>
@@ -414,7 +544,7 @@ export default function BookingScreen({ route, navigation }) {
               </View>
             </TouchableOpacity>
 
-            {openDropdown === "srv" && (
+            {!isReschedule && openDropdown === "srv" && (
               <View style={styles.dropdownList}>
                 {SERVICE_CATEGORIES[category].map((s) => (
                   <TouchableOpacity accessibilityRole="button"
@@ -453,7 +583,9 @@ export default function BookingScreen({ route, navigation }) {
           <>
             <TouchableOpacity accessibilityRole="button"
               style={styles.dropdown}
-              onPress={() => setOpenDropdown(openDropdown === "den" ? null : "den")}
+              disabled={isReschedule}
+          accessibilityState={{ disabled: isReschedule }}
+          onPress={() => setOpenDropdown(openDropdown === "den" ? null : "den")}
             >
               <View style={styles.dropdownRow}>
                 <Text style={styles.dropdownText}>{dentist || "Choose a dentist"}</Text>
@@ -461,7 +593,7 @@ export default function BookingScreen({ route, navigation }) {
               </View>
             </TouchableOpacity>
 
-            {openDropdown === "den" && (
+            {!isReschedule && openDropdown === "den" && (
               <View style={styles.dropdownList}>
                 {DENTISTS_BY_BRANCH[branch]?.map((d) => (
                   <TouchableOpacity accessibilityRole="button"
@@ -493,6 +625,7 @@ export default function BookingScreen({ route, navigation }) {
               minDate={minDateString}
               maxDate={maxDateString}
               onDayPress={(day) => {
+                if (bookingBusy.current || !rescheduleReady) return;
                 setDate(day.dateString);
                 setTime(null);
 
@@ -528,7 +661,7 @@ export default function BookingScreen({ route, navigation }) {
                 {availableTimes.map((t) => (
                   <TouchableOpacity accessibilityRole="button"
                     key={t.label}
-                    disabled={t.taken}
+                    disabled={t.taken || bookingLoading || !rescheduleReady}
                     style={[
                       styles.timeBtn,
                       t.taken && styles.timeDisabled,
@@ -553,6 +686,7 @@ export default function BookingScreen({ route, navigation }) {
         )}
       </ScrollView>
 
+      {unchangedSchedule && <Text style={styles.helper}>Choose a different date or time.</Text>}
       {/* BOTTOM ACTION BAR */}
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <TouchableOpacity accessibilityRole="button"
@@ -574,7 +708,7 @@ export default function BookingScreen({ route, navigation }) {
           {bookingLoading ? (
             <ActivityIndicator size="small" color={colors.ink} />
           ) : (
-            <Text style={styles.confirmText}>Confirm Booking</Text>
+            <Text style={styles.confirmText}>{isReschedule ? "Submit Request" : "Confirm Booking"}</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -590,7 +724,7 @@ export default function BookingScreen({ route, navigation }) {
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Ionicons name="calendar" size={24} color={colors.accent} style={{ marginRight: 8 }} />
-              <Text style={styles.modalTitle}>Confirm Appointment</Text>
+              <Text style={styles.modalTitle}>{isReschedule ? "Submit Reschedule Request" : "Confirm Appointment"}</Text>
             </View>
 
             <View style={styles.modalDetailsList}>
@@ -637,7 +771,7 @@ export default function BookingScreen({ route, navigation }) {
                 {bookingLoading ? (
                   <ActivityIndicator size="small" color={colors.ink} />
                 ) : (
-                  <Text style={styles.modalSubmitText}>Confirm & Book</Text>
+                  <Text style={styles.modalSubmitText}>{isReschedule ? "Submit Request" : "Confirm & Book"}</Text>
                 )}
               </TouchableOpacity>
             </View>
