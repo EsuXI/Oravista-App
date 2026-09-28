@@ -14,7 +14,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.esuxisteam.oravista"
+      "bundleIdentifier": "com.esuxisteam.oravista",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -37,6 +40,6 @@
         "projectId": "fc06367a-5c2e-4203-aa6c-25eb323b7308"
       }
     },
-    "owner": ""
+    "owner": "syntaxerawrs-team"
   }
 }
