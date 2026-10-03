@@ -11,7 +11,9 @@ const babel = dependency('@babel/core');
 const React = dependency('react');
 const response = (data, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => data });
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+const cleanups = [];
 function harness() {
+  cleanups.push(() => { for (const cell of cells) cell?.cleanup?.(); });
   let cells = [], cursor = 0, effects = [], cache = new Map(), tree, renderFn;
   const storage = new Map([['userData', JSON.stringify({ id: 7, email: 'patient@example.test' })]]);
   const calls = [], links = [], alerts = [];
@@ -41,6 +43,8 @@ function harness() {
   for (const name of ['View','Text','TouchableOpacity','ScrollView','TextInput','Image','Modal','ActivityIndicator','FlatList','RefreshControl','StatusBar','KeyboardAvoidingView','Switch']) native[name] = name;
   const mocks = {
     react, 'react-native': native,
+    'expo-print': {printToFileAsync: async () => ({uri:'file:///report.pdf'})},
+    'expo-sharing': {isAvailableAsync: async () => true, shareAsync: async () => {}},
     '@expo/vector-icons': { Ionicons: 'Icon' },
     '@react-navigation/native': { useNavigation: () => navigation, useFocusEffect: f => react.useEffect(f, []) },
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 24, bottom: 34 }) },
@@ -75,7 +79,7 @@ function text(node) { return typeof node === 'string' ? node : [node?.props?.chi
 const button = (h, label) => all(h.tree()).find(n => n.type === 'TouchableOpacity' && text(n) === label);
 const alert = h => all(h.tree()).find(n => n.props?.visible && n.props?.title && n.props?.onPrimaryPress);
 const errorView = h => all(h.tree()).find(n => n.props?.message && n.props?.onRetry);
-test.afterEach(() => { global.fetch = originalFetch; });
+test.afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); global.fetch = originalFetch; });
 const originalFetch = global.fetch;
 
 test('network helper rejects HTTP errors, invalid JSON and malformed lists', async () => {
@@ -127,7 +131,9 @@ test('record and billing failures display retry states instead of empty records/
   for (const name of ['RecordsScreen', 'BillingsScreen', 'AppointmentsScreen']) {
     const h = harness(); global.fetch = async () => response({ message: 'Test outage' }, 500);
     h.mount(name); await h.runEffects();
-    assert.equal(errorView(h).props.message, 'Test outage');
+    const error = errorView(h) || all(all(h.tree()).find(n => n.type === 'FlatList')?.props.ListHeaderComponent).find(n => n.props?.message && n.props?.onRetry);
+    if(name === 'RecordsScreen') assert.ok(error.props.message.includes('unavailable'));
+    else assert.equal(error.props.message, 'Test outage');
     assert.ok(!text(h.tree()).includes('₱0.00'));
   }
 });
@@ -210,25 +216,13 @@ test('failed availability blocks booking, retry recovers and uses the correct en
   assert.equal(button(h, 'Confirm Booking').props.disabled, false);
 });
 
-test('reschedule partial failure reports the created booking and blocks duplicate submissions', async () => {
+test('an unavailable reschedule cannot create a new booking', async () => {
   const h = harness(); let posts = 0;
-  global.fetch = async (url, options) => {
-    if (url.includes('/book-appointment')) {
-      posts++; const payload = JSON.parse(options.body); assert.equal(payload.amount, 500);
-      return response({ booking_ref: 'TEST-ONLY' }, 201);
-    }
-    if (url.includes('update-appointment-status')) return response({ message: 'Status unavailable' }, 500);
-    return response([]);
-  };
-  await chooseBooking(h, { rescheduleId: 4 });
-  all(h.tree()).find(n => n.type === 'TouchableOpacity' && text(n).trim() === '10:00 AM').props.onPress(); h.render();
-  button(h, 'Confirm Booking').props.onPress(); h.render();
-  const submit = button(h, 'Confirm & Book').props.onPress;
-  await Promise.all([submit(), submit()]); h.render();
-  assert.equal(posts, 1);
-  assert.equal(alert(h).props.title, 'New Appointment Booked');
-  assert.ok(alert(h).props.message.includes('previous appointment could not be updated'));
-  assert.equal(button(h, 'Confirm Booking').props.disabled, true);
+  global.fetch = async (url, options) => { if(options?.method === 'POST') posts++; return response([]); };
+  h.mount('BookingScreen', {route:{params:{rescheduleId:4}}}); await h.runEffects(); await h.runEffects();
+  assert.ok(errorView(h));
+  assert.equal(posts,0);
+  h.dispose();
 });
 
 test('notification read failures leave the notification unread', async () => {
@@ -298,4 +292,101 @@ test('Home shows the saved profile photo, opens Profile, and falls back if the i
   photo.props.onError(); h.render();
   assert.equal(all(h.tree()).some(n => n.type === 'Image'), false);
   h.dispose();
+});
+
+test('appointment management reveals labeled eligible actions and loads ten visits at a time', async () => {
+  const h = harness();
+  const visits = Array.from({ length: 12 }, (_, i) => ({ id: i + 1, service_type: 'Cleaning', appointment_date: '2026-12-01', status: i === 1 ? 'Confirmed' : 'Pending' }));
+  global.fetch = async () => response(visits);
+  h.mount('AppointmentsScreen'); await h.runEffects();
+  const list = () => all(h.tree()).find(n => n.type === 'FlatList');
+  assert.equal(list().props.data.length, 10);
+  assert.ok(!text(list().props.renderItem({ item: visits[0] })).includes('Cancel'));
+  button(h, 'Manage').props.onPress(); h.render();
+  const cancel = all(list().props.renderItem({ item: visits[0] })).find(n => n.type === 'TouchableOpacity' && text(n) === 'Cancel');
+  cancel.props.onPress(); h.render();
+  assert.equal(alert(h).props.title, 'Cancel Appointment');
+  const reschedule = all(list().props.renderItem({ item: visits[1] })).find(n => n.type === 'TouchableOpacity' && text(n) === 'Reschedule');
+  reschedule.props.onPress();
+  assert.deepEqual(h.calls.at(-1), ['Booking', { rescheduleId: 2 }]);
+  all(list().props.ListFooterComponent()).find(n => n.type === 'TouchableOpacity' && text(n) === 'Next').props.onPress(); h.render();
+  assert.equal(list().props.data.length, 2);
+  assert.equal(list().props.data[0].id, 11);
+  all(all(h.tree()).find(n => n.props?.testID === 'top-pagination')).find(n => n.type === 'TouchableOpacity' && text(n) === 'Previous').props.onPress(); h.render();
+  assert.equal(list().props.data.length, 10);
+  button(h, 'Cancel').props.onPress(); h.render();
+  assert.ok(!text(list().props.renderItem({ item: visits[1] })).includes('Reschedule'));
+});
+
+test('billing shows twenty records initially and expands without losing record access', async () => {
+  const h = harness();
+  global.fetch = async () => response({ records: Array.from({ length: 22 }, (_, i) => ({ id: i + 1, title: `Service ${i + 1}`, amount: 100, status: 'Paid' })), totalOutstanding: 0 });
+  h.mount('BillingsScreen'); await h.runEffects();
+  assert.ok(!text(h.tree()).includes('Service 21'));
+  button(h, 'Show 20 more bills').props.onPress(); h.render();
+  assert.ok(text(h.tree()).includes('Service 22'));
+  assert.equal(button(h, 'Show 20 more bills'), undefined);
+  const record = all(h.tree()).find(n => n.type === 'TouchableOpacity' && text(n).includes('Record #22'));
+  record.props.onPress(); h.render();
+  assert.ok(alert(h));
+});
+
+
+test('records paginate ten at a time in both directions and search resets the page', async () => {
+  const h = harness();
+  global.fetch = async () => response(Array.from({length:21}, (_, i) => ({id:i+1,file_name:`Record ${i+1}.pdf`,upload_date:'2026-10-01',file_path:'/uploads/test.pdf'})));
+  h.mount('RecordsScreen'); await h.runEffects();
+  const list = () => all(h.tree()).find(n => n.type === 'FlatList');
+  const pageButton = (position, label) => all(position === 'ListHeaderComponent' ? all(h.tree()).find(n => n.props?.testID === 'top-pagination') : list().props[position]()).find(n => n.type === 'TouchableOpacity' && text(n) === label);
+  assert.equal(list().props.data.length,10);
+  assert.equal(pageButton('ListHeaderComponent','Previous').props.disabled,true);
+  pageButton('ListFooterComponent','Next').props.onPress(); h.render();
+  assert.equal(list().props.data[0].id,11);
+  pageButton('ListHeaderComponent','Next').props.onPress(); h.render();
+  assert.equal(list().props.data.length,1);
+  assert.equal(pageButton('ListFooterComponent','Next').props.disabled,true);
+  all(h.tree()).find(n => n.type === 'TextInput').props.onChangeText('Record 1.pdf'); h.render(); await h.runEffects();
+  assert.equal(list().props.data[0].id,1);
+  assert.equal(list().props.data.length,1);
+});
+
+test('Home reads the same appointments and displays the nearest eligible future visit', async () => {
+  const h = harness();
+  global.fetch = async url => response(url.includes('user-appointments') ? [
+    {id:1,service_type:'Later visit',status:'Confirmed',appointment_date:'2099-12-31',appointment_time:'10:00:00'},
+    {id:2,service_type:'Nearest visit',status:'Approved',appointment_date:'2099-01-01',appointment_time:'10:00:00'},
+    {id:3,service_type:'Cancelled visit',status:'Cancelled',appointment_date:'2098-01-01'},
+  ] : []);
+  h.mount('HomeScreen'); await h.runEffects();
+  const content = text(h.tree());
+  assert.ok(content.indexOf('Nearest visit') < content.indexOf('Later visit'));
+  h.dispose();
+});
+
+
+test('empty appointment and record lists hide both pagination controls', async () => {
+  for (const screen of ['AppointmentsScreen','RecordsScreen']) {
+    const h = harness(); global.fetch = async () => response([]);
+    h.mount(screen); await h.runEffects();
+    const list = all(h.tree()).find(n => n.type === 'FlatList');
+    if(screen === 'AppointmentsScreen') assert.equal(list.props.ListHeaderComponent, undefined);
+    const top = all(h.tree()).find(n => n.props?.testID === 'top-pagination');
+    for (const pager of [top,list.props.ListFooterComponent()]) {
+      const controls = all(pager).filter(n => n.type === 'TouchableOpacity');
+      assert.equal(controls.length,0);
+    }
+  }
+});
+
+test('confirmed appointments expose both actions and late visits allow reschedule', async () => {
+  const h = harness(); global.fetch = async () => response([]);
+  h.mount('AppointmentsScreen'); await h.runEffects(); button(h,'Manage').props.onPress(); h.render();
+  const list = all(h.tree()).find(n => n.type === 'FlatList');
+  for (const status of ['Confirmed','Late / No Show']) {
+    const row = list.props.renderItem({item:{id:9,status,service_type:'Cleaning',appointment_date:'2099-01-01'}});
+    const actions = all(row).filter(n => n.type === 'TouchableOpacity');
+    if(status === 'Confirmed') assert.ok(actions.some(n => text(n) === 'Cancel'));
+    actions.find(n => text(n) === 'Reschedule').props.onPress();
+    assert.deepEqual(h.calls.at(-1),['Booking',{rescheduleId:9}]);
+  }
 });

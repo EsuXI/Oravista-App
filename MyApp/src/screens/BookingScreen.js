@@ -418,7 +418,7 @@ export default function BookingScreen({ route, navigation }) {
         visible: true,
         type: "error",
         title: "Booking Failed",
-        message: `${error?.message || "Unable to connect to the booking server."} Check your Visits list before submitting again in case the request was received.`,
+        message: `${error?.message || "Unable to connect to the booking server."} Check your Appointments list before submitting again in case the request was received.`,
         details: [],
         onPrimaryPress: () => setAlertConfig((prev) => ({ ...prev, visible: false })),
       });
@@ -454,6 +454,8 @@ export default function BookingScreen({ route, navigation }) {
         {isReschedule && <Text style={styles.helper}>Only the date and time can be changed. The clinic must approve your request.</Text>}
         {isReschedule && rescheduleLoading && <ActivityIndicator size="small" color={colors.accent} />}
         {isReschedule && rescheduleError && <LoadError message={rescheduleError} onRetry={() => setRescheduleRetry(value => value + 1)} />}
+        <View style={styles.bookingSection}>
+        <Text style={styles.sectionTitle}>1 - Choose your care</Text>
         {/* BRANCH */}
         <Text style={styles.label}>Select Branch</Text>
         <TouchableOpacity accessibilityRole="button"
@@ -615,6 +617,9 @@ export default function BookingScreen({ route, navigation }) {
           </>
         )}
 
+        </View>
+        <View style={styles.bookingSection}>
+        <Text style={styles.sectionTitle}>2 · Choose a time</Text>
         {/* DATE */}
         <Text style={styles.label}>Available Date</Text>
         {!dentist ? (
@@ -635,7 +640,7 @@ export default function BookingScreen({ route, navigation }) {
                   calendarBackground: colors.surface,
                   textSectionTitleColor: colors.ink,
                   dayTextColor: colors.ink,
-                  textDisabledColor: colors.ink,
+                  textDisabledColor: colors.muted,
                   monthTextColor: colors.ink,
                   textDayFontFamily: fonts.semiBold,
                   textMonthFontFamily: fonts.bold,
@@ -684,6 +689,8 @@ export default function BookingScreen({ route, navigation }) {
             )}
           </>
         )}
+        </View>
+        <View style={styles.bookingSection}><Text style={styles.sectionTitle}>Your visit</Text><Text style={styles.infoText}>{service?.name || 'Choose a service'} · {branch || 'Choose a clinic'}</Text><Text style={styles.infoText}>{date || 'Choose a date'} · {time || 'Choose a time'}</Text></View>
       </ScrollView>
 
       {unchangedSchedule && <Text style={styles.helper}>Choose a different date or time.</Text>}
@@ -702,7 +709,7 @@ export default function BookingScreen({ route, navigation }) {
           onPress={handleOpenConfirm}
           style={[
             styles.confirmBtn,
-            (!isComplete || bookingLoading) && { backgroundColor: colors.muted },
+            (!isComplete || bookingLoading) && { backgroundColor: colors.border },
           ]}
         >
           {bookingLoading ? (
@@ -793,17 +800,19 @@ export default function BookingScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
+  bookingSection: {backgroundColor:colors.surface,borderWidth:1,borderColor:colors.border,borderRadius:16,padding:12,marginBottom:12},
+  sectionTitle: {fontFamily:fonts.semiBold,fontSize:15,color:colors.accent},
   container: { flex: 1, backgroundColor: colors.canvas },
   content: { padding: 16, paddingBottom: 120 },
   label: { marginTop: 14, marginBottom: 6, fontFamily: fonts.medium, color: colors.ink },
   dropdown: {
     borderWidth: 1.5,
     borderColor: colors.border,
-    borderRadius: 24,
+    borderRadius: 18,
     padding: 16,
     backgroundColor: colors.surface,
   },
-  dropdownText: { color: colors.ink, fontFamily: fonts.regular },
+  dropdownText: { flex:1, marginRight:8, color: colors.ink, fontFamily: fonts.regular },
   dropdownRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   dropdownList: {
     borderWidth: 1,
@@ -818,13 +827,13 @@ const styles = StyleSheet.create({
   infoRow: { flexDirection: "row", marginTop: 8, paddingHorizontal: 4, alignItems: "flex-start" },
   infoText: { fontSize: 11, color: colors.muted, fontFamily: fonts.medium, flex: 1, lineHeight: 16 },
   helper: { textAlign: "center", color: colors.muted, marginTop: 10, fontFamily: fonts.medium },
-  calendarContainer: { marginTop: 4, borderRadius: 24, overflow: "hidden", borderWidth: 1, borderColor: colors.border },
+  calendarContainer: { marginTop: 4, borderRadius: 18, overflow: "hidden", borderWidth: 1, borderColor: colors.border },
   timeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 10, justifyContent: "space-between" },
   timeBtn: {
     width: "48%",
     borderWidth: 1.5,
     borderColor: colors.border,
-    borderRadius: 999,
+    borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 16,
     alignItems: "center",
@@ -846,13 +855,13 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderColor: colors.border,
   },
-  cancelBtn: { flex: 1, backgroundColor: colors.aquaSoft, padding: 16, borderRadius: 999, alignItems: "center" },
+  cancelBtn: { flex: 1, backgroundColor: colors.dangerSoft, padding: 16, borderRadius: 14, alignItems: "center" },
   cancelText: { fontFamily: fonts.semiBold, color: colors.ink },
   confirmBtn: {
     flex: 1,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.confirmedSoft,
     padding: 16,
-    borderRadius: 999,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
     minHeight: 54,
@@ -863,13 +872,13 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    padding: 16,
   },
   modalCard: {
     width: "100%",
     backgroundColor: colors.surface,
-    borderRadius: 28,
-    padding: 24,
+    borderRadius: 18,
+    padding: 16,
     borderWidth: 1,
     borderColor: colors.border,
   },
@@ -890,7 +899,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderWidth: 1,
     borderColor: colors.lavender,
-    marginBottom: 20,
+    marginBottom: 16,
   },
   modalRow: {
     flexDirection: "row",
@@ -923,7 +932,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.aquaSoft,
     height: 48,
-    borderRadius: 999,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -936,7 +945,7 @@ const styles = StyleSheet.create({
     flex: 1.5,
     backgroundColor: colors.primary,
     height: 48,
-    borderRadius: 999,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
   },

@@ -72,13 +72,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: fonts.medium,
     color: colors.muted,
-    marginTop: 20, // Pulls it slightly closer to the logo text
+    marginTop: 16, // Pulls it slightly closer to the logo text
   },
   divider: {
     height: 2,
     width: 40,
     backgroundColor: colors.border,
-    marginVertical: 26,
+    marginVertical: 16,
   },
   clinic: {
     fontSize: 13,

@@ -2,7 +2,7 @@ import { requestJson, requireArray, fileUrl, displayDate } from '../utils/patien
 import LoadError from '../components/LoadError';
 import ScreenBackground from '../components/ScreenBackground';
 import { colors } from '../theme/colors';
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -22,7 +22,7 @@ import ScreenHeader from "../components/ScreenHeader";
 import CustomAlertModal from "../components/CustomAlertModal";
 
 const FILTERS = ["All", "Confirmed", "Pending", "Reschedule Requested", "Rescheduled", "Late / No Show", "Completed", "Cancelled"];
-const ITEMS_PER_PAGE = 5;
+const ITEMS_PER_PAGE = 10;
 
 export default function AppointmentsScreen({ navigation }) {
   const [appointments, setAppointments] = useState([]);
@@ -31,6 +31,9 @@ export default function AppointmentsScreen({ navigation }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("All");
   const [page, setPage] = useState(1);
+  const listRef = useRef(null);
+  const [expandedId, setExpandedId] = useState(null);
+  const [isManaging, setIsManaging] = useState(false);
 
   // Cancellation and Status Alert States
   const [selectedCancelId, setSelectedCancelId] = useState(null);
@@ -97,7 +100,10 @@ export default function AppointmentsScreen({ navigation }) {
     return matchesFilter && matchesSearch;
   });
 
-  const displayedData = filteredData.slice(0, page * ITEMS_PER_PAGE);
+  const pageCount = Math.max(1, Math.ceil(filteredData.length / ITEMS_PER_PAGE));
+  const currentPage = Math.min(page, pageCount);
+  const displayedData = filteredData.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+  const changePage = (next) => { setPage(next); setExpandedId(null); listRef.current?.scrollToOffset({offset:0, animated:false}); };
 
   const loadMoreData = () => {
     if (displayedData.length < filteredData.length) {
@@ -183,30 +189,12 @@ export default function AppointmentsScreen({ navigation }) {
 
     return (
       <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <View style={{ flex: 1, paddingRight: 8 }}>
-            <Text style={styles.idText}>{item.booking_ref || "REFERENCE PENDING"}</Text>
-            <Text style={styles.service} numberOfLines={1}>{item.service_type}</Text>
-          </View>
-          <View style={[styles.statusBadge, badgeStyle.bg]}>
-            <Text style={[styles.statusText, badgeStyle.text]}>
-              {statusNormalized}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.infoRow}>
-          <Ionicons name="person-outline" size={14} color={colors.muted} />
-          <Text style={styles.infoText}>{item.dentist_name}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Ionicons name="location-outline" size={14} color={colors.muted} />
-          <Text style={styles.infoText} numberOfLines={1}>{displayAddress}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Ionicons name="calendar-outline" size={14} color={colors.muted} />
-          <Text style={styles.infoText}>{formattedDate} • {item.appointment_time}</Text>
-        </View>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={`View ${item.service_type} appointment details`} accessibilityState={{expanded:expandedId === item.id}} onPress={() => setExpandedId(expandedId === item.id ? null : item.id)}>
+          <View style={{flexDirection:'row',justifyContent:'space-between',gap:8}}><Text style={[styles.service,{flex:1}]} numberOfLines={1}>{item.service_type}</Text><Text style={[styles.statusText,badgeStyle.text]}>{statusNormalized}</Text></View>
+          <Text style={styles.infoText}>{formattedDate} · {item.appointment_time}</Text>
+          <Text style={styles.infoText} numberOfLines={1}>{item.dentist_name || 'Dentist not provided'} · {expandedId === item.id ? 'Hide details' : 'Details ›'}</Text>
+        </TouchableOpacity>
+        {expandedId === item.id && <View style={{paddingTop:8}}><Text style={styles.infoText}>{item.booking_ref || 'Reference pending'} · {displayAddress}</Text><Text style={styles.infoText}>Base price: {basePriceDisplay == null ? 'Not provided' : `PHP ${Number(basePriceDisplay).toLocaleString()}`}</Text></View>}
 
         {statusLower === 'reschedule requested' && (
           <View style={styles.infoRow}>
@@ -219,16 +207,8 @@ export default function AppointmentsScreen({ navigation }) {
           </View>
         )}
 
-        {basePriceDisplay ? (
-          <View style={styles.infoRow}>
-            <Ionicons name="pricetag-outline" size={14} color={colors.accent} />
-            <Text style={[styles.infoText, styles.priceText]}>
-              Base Price: ₱{Number(basePriceDisplay).toLocaleString()}
-            </Text>
-          </View>
-        ) : null}
-
-        {statusLower === "pending" && (
+        <View style={{flexDirection:"row",gap:8,flexWrap:"wrap"}}>
+        {isManaging && ["pending", "confirmed"].includes(statusLower) && (
           <TouchableOpacity accessibilityRole="button"
             onPress={() => {
               setSelectedCancelId(item.id);
@@ -237,36 +217,37 @@ export default function AppointmentsScreen({ navigation }) {
             style={styles.cancelBtn}
             activeOpacity={0.7}
           >
-            <Text style={styles.cancelText}>Cancel Appointment</Text>
+            <Ionicons name="close-circle-outline" size={17} color={colors.danger} /><Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
         )}
 
-        {["Confirmed", "Late / No Show"].includes(item.status) && (
+        {isManaging && ["confirmed", "late / no show"].includes(statusLower) && (
           <TouchableOpacity accessibilityRole="button"
             onPress={() => navigation.navigate("Booking", { rescheduleId: item.id })}
             style={styles.rescheduleBtn}
             activeOpacity={0.7}
           >
-            <Text style={styles.rescheduleText}>Reschedule Appointment</Text>
+            <Ionicons name="calendar-outline" size={17} color={colors.accent} /><Text style={styles.rescheduleText}>Reschedule</Text>
           </TouchableOpacity>
         )}
+        </View>
       </View>
     );
   };
 
-  const renderFooter = () => {
-    if (displayedData.length >= filteredData.length) return null;
-    return (
-      <TouchableOpacity accessibilityRole="button" style={styles.loadMoreBtn} onPress={loadMoreData} activeOpacity={0.7}>
-        <Text style={styles.loadMoreText}>Load More</Text>
-      </TouchableOpacity>
-    );
-  };
+  const renderFooter = () => filteredData.length === 0 ? null : (
+    <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',paddingVertical:4,gap:8}}>
+      <TouchableOpacity accessibilityRole="button" disabled={currentPage === 1} onPress={() => changePage(currentPage - 1)} style={{minHeight:44,justifyContent:'center',paddingHorizontal:12,opacity:currentPage === 1 ? 0.4 : 1}}><Text style={{color:colors.accent}}>Previous</Text></TouchableOpacity>
+      <Text style={{color:colors.muted,fontSize:12}}>{currentPage} / {pageCount}</Text>
+      <TouchableOpacity accessibilityRole="button" disabled={currentPage === pageCount} onPress={() => changePage(currentPage + 1)} style={{minHeight:44,justifyContent:'center',paddingHorizontal:12,opacity:currentPage === pageCount ? 0.4 : 1}}><Text style={{color:colors.accent}}>Next</Text></TouchableOpacity>
+    </View>
+  );
 
   return (
     <View style={styles.container}>
       <ScreenBackground />
       <ScreenHeader title="My Appointments" />
+      <View style={{flexDirection:"row",alignItems:"center",gap:12,paddingHorizontal:16,paddingTop:10}}><Text style={{flex:1,fontSize:12,color:colors.muted}}>Tap Manage for cancellation or rescheduling options. Tap a row for details.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel={isManaging ? "Cancel managing appointments" : "Manage appointments"} onPress={() => setIsManaging(!isManaging)} style={{minHeight:44,paddingHorizontal:12,justifyContent:"center",borderRadius:14,backgroundColor:colors.aquaSoft}}><Text style={{color:colors.accent,fontFamily:fonts.semiBold}}>{isManaging ? "Cancel" : "Manage"}</Text></TouchableOpacity></View>
 
       <View style={styles.searchBar}>
         <Ionicons name="search-outline" size={18} color={colors.muted} />
@@ -278,7 +259,7 @@ export default function AppointmentsScreen({ navigation }) {
         />
       </View>
 
-      <View style={{ maxHeight: 44, marginBottom: 12 }}>
+      <View style={{ minHeight: 44, marginBottom: 12 }}>
         <ScrollView keyboardShouldPersistTaps="handled" horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterList}>
           {FILTERS.map((f) => (
             <TouchableOpacity accessibilityRole="button"
@@ -292,16 +273,19 @@ export default function AppointmentsScreen({ navigation }) {
         </ScrollView>
       </View>
 
+      <View testID="top-pagination" style={{paddingHorizontal:16}}>{renderFooter()}</View>
       {loading && page === 1 ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.accent} />
         </View>
       ) : loadError ? (<LoadError message={loadError} onRetry={fetchAppointments} />) : (
         <FlatList
+          style={{flex:1}}
+          ref={listRef}
           data={displayedData}
           keyExtractor={(item) => item.id.toString()}
           renderItem={renderItem}
-          contentContainerStyle={{ padding: 16, paddingBottom: 120 }}
+          contentContainerStyle={{ padding: 16, paddingBottom: 12 }}
           ListEmptyComponent={<Text style={styles.empty}>No appointments found.</Text>}
           ListFooterComponent={renderFooter}
         />
@@ -359,7 +343,7 @@ const styles = StyleSheet.create({
   chip: {
     paddingHorizontal: 18,
     paddingVertical: 8,
-    borderRadius: 999,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.border,
     justifyContent: "center",
@@ -368,21 +352,21 @@ const styles = StyleSheet.create({
   chipText: { fontFamily: fonts.medium, fontSize: 12, color: colors.muted },
   activeChipText: { color: colors.ink },
   card: {
-    backgroundColor: colors.input,
-    borderRadius: 28,
-    padding: 20,
-    marginBottom: 16,
+    backgroundColor: colors.surface,
+    borderRadius: 0,
+    padding: 10,
+    marginBottom: 0,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 },
+  cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 },
   idText: { fontSize: 10, color: colors.muted, fontFamily: fonts.bold, marginBottom: 2 },
-  service: { fontSize: 17, fontFamily: fonts.semiBold, color: colors.ink },
+  service: { fontSize: 15, fontFamily: fonts.semiBold, color: colors.ink },
   statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 999,
-    minWidth: 85,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    borderRadius: 18,
+    maxWidth: 125,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -403,45 +387,48 @@ const styles = StyleSheet.create({
   infoText: { fontSize: 13, color: colors.muted, fontFamily: fonts.medium, flexShrink: 1 },
   priceText: { color: colors.accent, fontFamily: fonts.bold },
   cancelBtn: {
-    marginTop: 14,
+    minHeight:44, flexDirection:"row", justifyContent:"center", gap:6,
+    marginTop: 6,
     backgroundColor: colors.surface,
-    padding: 12,
-    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
     alignItems: "center",
     borderWidth: 1,
     borderColor: "#FCA5A5",
   },
   cancelText: { color: "#DC2626", fontFamily: fonts.bold, fontSize: 13 },
   rescheduleBtn: {
-    marginTop: 14,
+    minHeight:44, flexDirection:"row", justifyContent:"center", gap:6,
+    marginTop: 6,
     backgroundColor: "#F5F8FF",
-    padding: 12,
-    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
     alignItems: "center",
     borderWidth: 1,
     borderColor: colors.accent,
   },
   rescheduleText: { color: colors.accent, fontFamily: fonts.bold, fontSize: 13 },
   bookBtn: {
-    position: "absolute",
-    bottom: 20,
-    left: 20,
-    right: 20,
+    marginHorizontal: 16,
+    marginVertical: 8,
     backgroundColor: colors.primary,
-    padding: 18,
-    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
     alignItems: "center",
-    elevation: 3,
+    elevation: 1,
   },
   bookText: { color: colors.ink, fontFamily: fonts.bold, fontSize: 16 },
   empty: { textAlign: "center", marginTop: 40, color: colors.muted, fontFamily: fonts.medium },
   loadMoreBtn: {
     paddingVertical: 14,
     backgroundColor: colors.aquaSoft,
-    borderRadius: 999,
+    borderRadius: 14,
     alignItems: "center",
     marginTop: 10,
-    marginBottom: 20,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: colors.border,
   },

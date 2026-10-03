@@ -1,4 +1,5 @@
 import React from "react";
+import { Text } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,11 +25,11 @@ export default function MainTabNavigator() {
         tabBarActiveBackgroundColor: colors.aquaSoft,
         tabBarHideOnKeyboard: true,
         tabBarLabelStyle: { fontFamily: fonts.semiBold, fontSize: 10 },
-        tabBarItemStyle: { borderRadius: 22, marginHorizontal: 3, paddingVertical: 5 },
+        tabBarItemStyle: { borderRadius: 14, marginHorizontal: 3, paddingVertical: 5 },
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
-          height: 66 + Math.max(insets.bottom, 8),
+          height: 68 + Math.max(insets.bottom, 8),
           paddingBottom: Math.max(insets.bottom, 8),
           paddingTop: 8,
           paddingHorizontal: 6,
@@ -49,7 +50,7 @@ export default function MainTabNavigator() {
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Services" component={ServicesScreen} />
-      <Tab.Screen name="Appointments" component={AppointmentsScreen} options={{ tabBarLabel: 'Visits' }} />
+      <Tab.Screen name="Appointments" component={AppointmentsScreen} options={{ tabBarAccessibilityLabel: 'Appointments', tabBarLabel: 'Appointments', tabBarLabelStyle: {fontFamily:fonts.semiBold,fontSize:9} }} />
       <Tab.Screen name="Records" component={RecordsScreen} />
       <Tab.Screen
         name="Profile"

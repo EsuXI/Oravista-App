@@ -31,7 +31,7 @@ import {
 } from '../utils/patientRecords';
 
 const CATEGORIES = ["All", "PDF", "Images", "Other files"];
-const ITEMS_PER_PAGE = 4;
+const ITEMS_PER_PAGE = 10;
 
 export default function RecordsScreen() {
   const [records, setRecords] = useState([]);
@@ -40,6 +40,8 @@ export default function RecordsScreen() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [page, setPage] = useState(1);
+  const listRef = useRef(null);
+  const [expandedId, setExpandedId] = useState(null);
 
   const [patient, setPatient] = useState(null);
   const [analytics, setAnalytics] = useState(null);
@@ -169,7 +171,10 @@ export default function RecordsScreen() {
     return matchesSearch && matchesCategory;
   });
 
-  const displayedData = filteredRecords.slice(0, page * ITEMS_PER_PAGE);
+  const pageCount = Math.max(1, Math.ceil(filteredRecords.length / ITEMS_PER_PAGE));
+  const currentPage = Math.min(page, pageCount);
+  const displayedData = filteredRecords.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+  const changePage = (next) => { setPage(next); setExpandedId(null); listRef.current?.scrollToOffset({offset:0, animated:false}); };
 
   const loadMoreData = () => {
     if (displayedData.length < filteredRecords.length) {
@@ -207,42 +212,15 @@ export default function RecordsScreen() {
 
     return (
       <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <View style={styles.typeBox}>
-            <Text style={styles.type}>Medical Record</Text>
-            {item.id != null && <Text style={styles.recordId}> • REC-{String(item.id).padStart(3, "0")}</Text>}
-          </View>
-          <TouchableOpacity accessibilityLabel="Download document" hitSlop={8} accessibilityRole="button"
-            style={styles.downloadBtn}
-            onPress={() => handleDownload(item.file_path)}
-          >
-            <Ionicons name="download-outline" size={18} color={colors.accent} />
+        <View style={{flexDirection:'row',alignItems:'center',gap:8}}>
+          <TouchableOpacity accessibilityRole="button" accessibilityState={{expanded:expandedId === item.id}} onPress={() => setExpandedId(expandedId === item.id ? null : item.id)} style={{flex:1,minHeight:48,justifyContent:'center'}}>
+            <Text style={styles.title} numberOfLines={1}>{recordText(item.file_name, 'Medical record')}</Text>
+            <Text style={styles.infoText}>{displayDate(item.upload_date)} · REC-{recordText(item.id)}</Text>
+            <Text style={styles.infoText} numberOfLines={1}>{displayDoctor}</Text>
           </TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Open ${item.file_name || 'medical record'}`} style={styles.downloadBtn} onPress={() => handleDownload(item.file_path)}><Ionicons name="download-outline" size={18} color={colors.accent}/></TouchableOpacity>
         </View>
-
-        <Text style={styles.title}>{recordText(item.file_name, "Diagnostic File")}</Text>
-
-        <View style={{ marginTop: 12, marginBottom: 14 }}>
-          <View style={styles.infoRow}>
-            <Ionicons name="person-outline" size={14} color={colors.muted} />
-            <Text style={styles.infoText}>{displayDoctor}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Ionicons name="location-outline" size={14} color={colors.muted} />
-            <Text style={styles.infoText} numberOfLines={1}>{displayAddress}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Ionicons name="calendar-outline" size={14} color={colors.muted} />
-            <Text style={styles.infoText}>Uploaded: {displayDate(item.upload_date)}</Text>
-          </View>
-        </View>
-
-        <View style={styles.noteBox}>
-          <Ionicons name="information-circle" size={14} color={colors.accent} style={{ marginRight: 6 }} />
-          <Text style={styles.noteText}>
-            Tap the download icon above to preview or save this record.
-          </Text>
-        </View>
+        {expandedId === item.id && <Text style={styles.infoText}>{recordText(item.file_name)} · {displayAddress}</Text>}
       </View>
     );
   };
@@ -307,14 +285,13 @@ export default function RecordsScreen() {
     </View>
   );
 
-  const renderFooter = () => {
-    if (displayedData.length >= filteredRecords.length) return null;
-    return (
-      <TouchableOpacity accessibilityRole="button" style={styles.loadMoreBtn} onPress={loadMoreData} activeOpacity={0.7}>
-        <Text style={styles.loadMoreText}>Load More</Text>
-      </TouchableOpacity>
-    );
-  };
+  const renderFooter = () => filteredRecords.length === 0 ? null : (
+    <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',paddingVertical:4,gap:8}}>
+      <TouchableOpacity accessibilityRole="button" disabled={currentPage === 1} onPress={() => changePage(currentPage - 1)} style={{minHeight:44,justifyContent:'center',paddingHorizontal:12,opacity:currentPage === 1 ? 0.4 : 1}}><Text style={{color:colors.accent}}>Previous</Text></TouchableOpacity>
+      <Text style={{color:colors.muted,fontSize:12}}>{currentPage} / {pageCount}</Text>
+      <TouchableOpacity accessibilityRole="button" disabled={currentPage === pageCount} onPress={() => changePage(currentPage + 1)} style={{minHeight:44,justifyContent:'center',paddingHorizontal:12,opacity:currentPage === pageCount ? 0.4 : 1}}><Text style={{color:colors.accent}}>Next</Text></TouchableOpacity>
+    </View>
+  );
 
   return (
     <View style={styles.container}>
@@ -348,12 +325,15 @@ export default function RecordsScreen() {
         </ScrollView>
       </View>
 
+      <View testID="top-pagination" style={{paddingHorizontal:16}}>{renderFooter()}</View>
       {loading && page === 1 ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color={colors.accent} />
         </View>
       ) : loadError ? (<LoadError message={loadError} onRetry={fetchRecords} />) : (
         <FlatList
+          style={{flex:1}}
+          ref={listRef}
           data={displayedData}
           keyExtractor={(item) => item.recordKey}
           ListHeaderComponent={reportHeader}
@@ -393,26 +373,26 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.canvas },
   searchContainer: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, marginHorizontal: 16, marginTop: 16, paddingHorizontal: 14, height: 48, borderRadius: 20, borderWidth: 1, borderColor: colors.border },
   searchInput: { flex: 1, marginLeft: 8, fontFamily: fonts.regular, fontSize: 14, color: colors.ink },
-  filterContainer: { paddingVertical: 12, maxHeight: 60 },
+  filterContainer: { paddingVertical: 6 },
   filterScroll: { paddingHorizontal: 16, gap: 8 },
-  filterChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, justifyContent: "center" },
+  filterChip: { paddingHorizontal: 16, minHeight:44, paddingVertical: 8, borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, justifyContent: "center" },
   activeFilterChip: { backgroundColor: colors.primary, borderColor: colors.accent },
   filterText: { fontFamily: fonts.medium, fontSize: 13, color: colors.muted },
   activeFilterText: { color: colors.ink },
   centerContainer: { flex: 1, alignItems: "center", justifyContent: "center", marginTop: 40 },
   emptyText: { fontSize: 14, color: colors.muted, fontFamily: fonts.medium },
   content: { padding: 16, paddingBottom: 40 },
-  card: { backgroundColor: colors.surface, borderRadius: 28, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: colors.border, elevation: 2 },
+  card: { backgroundColor: colors.surface, borderRadius: 0, padding: 10, marginBottom: 0, borderWidth: 1, borderColor: colors.border, elevation: 1 },
   cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   typeBox: { flexDirection: "row", alignItems: "center" },
   type: { fontSize: 11, fontFamily: fonts.bold, color: colors.muted, textTransform: "uppercase" },
   recordId: { fontSize: 11, fontFamily: fonts.medium, color: colors.muted },
-  downloadBtn: { width: 44, height: 44, borderRadius: 999, backgroundColor: colors.lavender, alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 16, fontFamily: fonts.bold, color: colors.ink },
+  downloadBtn: { width: 44, height: 44, borderRadius: 14, backgroundColor: colors.lavender, alignItems: "center", justifyContent: "center" },
+  title: { fontSize: 14, fontFamily: fonts.semiBold, color: colors.ink },
   infoRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 6 },
   infoText: { fontSize: 13, color: colors.muted, fontFamily: fonts.medium, flexShrink: 1 },
   noteBox: { flexDirection: "row", backgroundColor: colors.input, borderRadius: 16, padding: 12, borderWidth: 1, borderColor: colors.border },
   noteText: { flex: 1, fontSize: 11, fontFamily: fonts.regular, color: colors.muted, lineHeight: 16 },
-  loadMoreBtn: { paddingVertical: 14, backgroundColor: colors.aquaSoft, borderRadius: 999, alignItems: "center", marginTop: 10, marginBottom: 20, borderWidth: 1, borderColor: colors.border },
+  loadMoreBtn: { paddingVertical: 14, backgroundColor: colors.aquaSoft, borderRadius: 14, alignItems: "center", marginTop: 10, marginBottom: 16, borderWidth: 1, borderColor: colors.border },
   loadMoreText: { color: colors.accent, fontFamily: fonts.semiBold, fontSize: 14 },
 });

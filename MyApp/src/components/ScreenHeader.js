@@ -12,12 +12,12 @@ export default function ScreenHeader({ title, showBack = false, rightIcon, onRig
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
+    <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
       <ScreenBackground header />
       <View style={styles.row}>
         {showBack ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" onPress={() => navigation.goBack()} style={styles.iconButton}><Ionicons name="arrow-back" size={23} color={colors.ink} /></TouchableOpacity> : <BrandLogo variant="symbol" width={44} />}
         <View style={styles.titles}>
-          <Text style={styles.eyebrow}>YOUR SMILE, OUR PRIORITY</Text>
+          <Text style={styles.eyebrow}>KING EPRES DENTAL CLINIC</Text>
           <Text accessibilityRole="header" style={styles.title}>{title}</Text>
         </View>
         {rightIcon && <TouchableOpacity accessibilityRole="button" accessibilityLabel={rightAccessibilityLabel} disabled={!onRightPress} onPress={onRightPress} style={styles.iconButton}><Ionicons name={rightIcon} size={23} color={colors.ink} /></TouchableOpacity>}
@@ -26,10 +26,10 @@ export default function ScreenHeader({ title, showBack = false, rightIcon, onRig
   );
 }
 const styles = StyleSheet.create({
-  header: { backgroundColor: colors.primary, paddingHorizontal: 20, paddingBottom: 22, borderBottomLeftRadius: 32, borderBottomRightRadius: 32, overflow: 'hidden' },
+  header: { backgroundColor: colors.primary, paddingHorizontal: 16, paddingBottom: 14, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, overflow: 'hidden' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   titles: { flex: 1, minWidth: 0 },
   eyebrow: { color: colors.ink, fontFamily: fonts.semiBold, fontSize: 9, letterSpacing: 1.1, marginBottom: 4 },
   title: { color: colors.ink, fontFamily: fonts.bold, fontSize: 21, lineHeight: 29 },
-  iconButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: '#B8EAF099' },
+  iconButton: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#B8EAF099' },
 });

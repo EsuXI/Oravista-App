@@ -199,7 +199,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     marginTop: 4,
   },
-  content: { padding: 20, paddingBottom: 40 },
+  content: { padding: 16, paddingBottom: 40 },
   sectionHeader: {
     fontSize: 13,
     fontFamily: fonts.semiBold,
@@ -211,12 +211,12 @@ const styles = StyleSheet.create({
   },
   menuSection: {
     backgroundColor: colors.surface,
-    borderRadius: 28,
+    borderRadius: 18,
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: colors.border,
-    marginBottom: 20,
+    marginBottom: 16,
   },
   menuItem: {
     flexDirection: "row",
@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#FCA5A5",
     height: 54,
-    borderRadius: 999,
+    borderRadius: 14,
     marginTop: 8,
   },
   logoutText: { color: "#EF4444", fontSize: 15, fontFamily: fonts.semiBold },

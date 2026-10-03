@@ -116,17 +116,17 @@ export default function ForgotPasswordScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.canvas },
-  premiumHeader: { backgroundColor: colors.primary, paddingTop: 80, paddingBottom: 40, alignItems: "center", borderBottomLeftRadius: 40, borderBottomRightRadius: 40, elevation: 3, position: "relative" },
+  premiumHeader: { backgroundColor: colors.primary, paddingTop: 80, paddingBottom: 40, alignItems: "center", borderBottomLeftRadius: 40, borderBottomRightRadius: 40, elevation: 1, position: "relative" },
   backBtn: { position: "absolute", top: 50, left: 20, padding: 8, zIndex: 10 },
-  iconCircle: { width: 70, height: 70, borderRadius: 22, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", marginBottom: 20 },
+  iconCircle: { width: 70, height: 70, borderRadius: 22, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", marginBottom: 16 },
   title: { color: colors.ink, fontSize: 24, fontFamily: fonts.bold },
   subtitle: { color: colors.muted, fontSize: 13, fontFamily: fonts.medium, marginTop: 6, textAlign: "center", paddingHorizontal: 40 },
   scrollContent: { paddingBottom: 40 , maxWidth: 680, width: '100%', alignSelf: 'center' },
-  form: { paddingHorizontal: 30, paddingTop: 40 , maxWidth: 680, width: '100%', alignSelf: 'center' },
+  form: { paddingHorizontal: 16, paddingTop: 40 , maxWidth: 680, width: '100%', alignSelf: 'center' },
   label: { fontSize: 13, fontFamily: fonts.bold, color: colors.ink, marginBottom: 8, marginLeft: 4 },
   inputWrapper: { flexDirection: "row", alignItems: "center", backgroundColor: colors.input, borderWidth: 1, borderColor: colors.border, borderRadius: 16, paddingHorizontal: 16, height: 56 },
   input: { flex: 1, marginLeft: 12, fontFamily: fonts.medium, color: colors.ink, fontSize: 15 },
   error: { color: "#DC2626", fontSize: 12, marginTop: 8, marginLeft: 8, fontFamily: fonts.medium },
-  resetBtn: { backgroundColor: colors.primary, height: 58, borderRadius: 999, justifyContent: "center", alignItems: "center", marginTop: 24 },
+  resetBtn: { backgroundColor: colors.primary, height: 58, borderRadius: 14, justifyContent: "center", alignItems: "center", marginTop: 16 },
   resetBtnText: { color: colors.ink, fontSize: 16, fontFamily: fonts.bold },
 });

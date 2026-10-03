@@ -2,7 +2,7 @@ import { loadBillings, fileUrl, money } from '../utils/patientData';
 import LoadError from '../components/LoadError';
 import ScreenBackground from '../components/ScreenBackground';
 import { colors } from '../theme/colors';
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -24,6 +24,7 @@ import { API_BASE_URL } from "../config/config";
 const STATUS_FILTERS = ["All", "Pending", "Paid"];
 
 export default function BillingsScreen({ navigation }) {
+  const [visibleCount, setVisibleCount] = useState(20);
   const [billings, setBillings] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeStatus, setActiveStatus] = useState("All");
@@ -74,6 +75,8 @@ export default function BillingsScreen({ navigation }) {
 
     return matchesStatus && matchesSearch;
   });
+
+  useEffect(() => { setVisibleCount(20); }, [searchQuery, activeStatus]);
 
   const handleDownload = (path) => {
     const url = fileUrl(path, API_BASE_URL);
@@ -178,7 +181,7 @@ export default function BillingsScreen({ navigation }) {
               <Text style={styles.emptyText}>No billing records found.</Text>
             </View>
           ) : (
-            filteredBillings.map((bill) => (
+            filteredBillings.slice(0, visibleCount).map((bill) => (
               <TouchableOpacity accessibilityRole="button"
                 key={bill.id}
                 style={styles.card}
@@ -201,7 +204,7 @@ export default function BillingsScreen({ navigation }) {
                   <Text style={styles.amount}>
                     {money(bill.amount)}
                   </Text>
-                  <View style={[styles.statusBadge, (bill.status || "").toLowerCase() === "paid" ? styles.paidBg : styles.pendingBg]}>
+                  <View style={styles.statusBadge}>
                     <Text style={[styles.statusText, (bill.status || "").toLowerCase() === "paid" ? styles.paidText : styles.pendingText]}>
                       {bill.status || "Not provided"}
                     </Text>
@@ -210,6 +213,7 @@ export default function BillingsScreen({ navigation }) {
               </TouchableOpacity>
             ))
           )}
+          {visibleCount < filteredBillings.length && <TouchableOpacity accessibilityRole="button" onPress={() => setVisibleCount(count => count + 20)} style={{minHeight:44,padding:12,alignItems:"center",backgroundColor:colors.aquaSoft,borderRadius:14}}><Text style={{color:colors.accent,fontFamily:fonts.semiBold}}>Show 20 more bills</Text></TouchableOpacity>}
         </ScrollView>
       )}
 
@@ -230,7 +234,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.canvas },
   centerContainer: { flex: 1, alignItems: "center", justifyContent: "center", marginTop: 60 },
   emptyText: { fontSize: 14, color: colors.muted, fontFamily: fonts.medium, marginTop: 12 },
-  balanceCard: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: colors.surface, marginHorizontal: 20, marginTop: 20, padding: 24, borderRadius: 28, borderWidth: 1, borderColor: colors.border, elevation: 3 },
+  balanceCard: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: colors.surface, marginHorizontal: 20, marginTop: 16, padding: 16, borderRadius: 18, borderWidth: 1, borderColor: colors.border, elevation: 1 },
   balanceInfo: { flex: 1 },
   balanceLabel: { fontSize: 11, color: colors.muted, fontFamily: fonts.bold, textTransform: "uppercase", letterSpacing: 1 },
   balanceAmount: { fontSize: 28, color: colors.ink, fontFamily: fonts.bold, marginTop: 4 },
@@ -238,22 +242,22 @@ const styles = StyleSheet.create({
   controlsWrapper: { paddingVertical: 12 },
   searchContainer: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, marginHorizontal: 20, paddingHorizontal: 16, height: 50, borderRadius: 20, borderWidth: 1, borderColor: colors.border },
   searchInput: { flex: 1, marginLeft: 10, fontFamily: fonts.regular, fontSize: 14, color: colors.ink },
-  filterScroll: { paddingHorizontal: 20, gap: 10, marginTop: 14 },
-  filterChip: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+  filterScroll: { paddingHorizontal: 16, gap: 10, marginTop: 14 },
+  filterChip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
   activeFilterChip: { backgroundColor: colors.primary, borderColor: colors.accent },
   filterText: { fontFamily: fonts.medium, fontSize: 13, color: colors.muted },
   activeFilterText: { color: colors.ink },
-  list: { padding: 20, paddingTop: 0, paddingBottom: 40 },
-  card: { backgroundColor: colors.surface, borderRadius: 28, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: colors.border, elevation: 2 },
+  list: { padding: 16, paddingTop: 0, paddingBottom: 40 },
+  card: { backgroundColor: colors.surface, borderRadius: 18, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: colors.border, elevation: 1 },
   cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   idBox: { backgroundColor: colors.aquaSoft, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
   invoice: { fontSize: 10, color: colors.muted, fontFamily: fonts.bold },
-  downloadBtn: { width: 44, height: 44, borderRadius: 999, backgroundColor: colors.lavender, alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 17, fontFamily: fonts.bold, color: colors.ink },
+  downloadBtn: { width: 44, height: 44, borderRadius: 14, backgroundColor: colors.lavender, alignItems: "center", justifyContent: "center" },
+  title: { fontSize: 15, fontFamily: fonts.bold, color: colors.ink },
   date: { fontSize: 12, color: colors.muted, fontFamily: fonts.medium, marginTop: 4 },
-  cardBottom: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 18 },
+  cardBottom: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10 },
   amount: { fontSize: 18, fontFamily: fonts.bold, color: colors.ink },
-  statusBadge: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 999, minWidth: 80, alignItems: "center" },
+  statusBadge: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 18, minWidth: 80, alignItems: "center" },
   paidBg: { backgroundColor: "#D1FAE5" },
   pendingBg: { backgroundColor: "#FEF3C7" },
   statusText: { fontSize: 10, fontFamily: fonts.bold, textTransform: "uppercase", letterSpacing: 0.5 },

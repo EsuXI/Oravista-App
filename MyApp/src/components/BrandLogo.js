@@ -3,8 +3,8 @@ import { View, Image } from 'react-native';
 
 // Display original transparent PNGs without their empty margins; no raster edits.
 const artwork = {
-  horizontal: { image: require('../../assets/brand/oravista-horizontal.png'), x: 200, y: 524, w: 2591, h: 952, sourceW: 3000, sourceH: 2000 },
-  stacked: { image: require('../../assets/brand/oravista-stacked.png'), x: 232, y: 98, w: 1534, h: 1675, sourceW: 2000, sourceH: 2000 },
+  horizontal: { image: require('../../assets/brand/oravista-horizontal.png'), x: 98, y: 208, w: 2792, h: 1084, sourceW: 3000, sourceH: 1500 },
+  stacked: { image: require('../../assets/brand/oravista-stacked.png'), x: 190, y: 98, w: 1614, h: 1740, sourceW: 2000, sourceH: 2000 },
   symbol: { image: require('../../assets/brand/oravista-symbol.png'), x: 0, y: 0, w: 2000, h: 2000, sourceW: 2000, sourceH: 2000 },
 };
 export default function BrandLogo({ variant = 'horizontal', width = 170, style }) {

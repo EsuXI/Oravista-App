@@ -273,11 +273,11 @@ const styles = StyleSheet.create({
   premiumHeader: {
     backgroundColor: colors.primary,
     paddingTop: 80,
-    paddingBottom: 40,
+    paddingBottom: 20,
     alignItems: "center",
     borderBottomLeftRadius: 40,
     borderBottomRightRadius: 40,
-    elevation: 3,
+    elevation: 1,
     shadowColor: "#000",
     shadowOpacity: 0.08,
     shadowRadius: 15,
@@ -298,14 +298,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
-    elevation: 3,
+    marginBottom: 16,
+    elevation: 1,
   },
   title: { color: colors.ink, fontSize: 24, fontFamily: fonts.bold },
   subtitle: { color: colors.muted, fontSize: 13, fontFamily: fonts.medium, marginTop: 6, textAlign: "center", paddingHorizontal: 40 },
 
   scrollContent: { paddingBottom: 40 , maxWidth: 680, width: '100%', alignSelf: 'center' },
-  form: { paddingHorizontal: 30, paddingTop: 20 , maxWidth: 680, width: '100%', alignSelf: 'center' },
+  form: { paddingHorizontal: 16, paddingTop: 20 , maxWidth: 680, width: '100%', alignSelf: 'center' },
 
   label: { fontSize: 13, fontFamily: fonts.bold, color: colors.ink, marginBottom: 8, marginLeft: 4, marginTop: 16 },
   inputWrapper: {
@@ -335,18 +335,18 @@ const styles = StyleSheet.create({
   createBtn: {
     backgroundColor: colors.primary,
     height: 58,
-    borderRadius: 999,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
     marginTop: 32,
-    elevation: 3,
+    elevation: 1,
     shadowColor: "#000",
     shadowOpacity: 0.1,
     shadowRadius: 10,
   },
   createText: { color: colors.ink, fontSize: 16, fontFamily: fonts.bold },
 
-  orRow: { flexDirection: "row", alignItems: "center", marginVertical: 24 },
+  orRow: { flexDirection: "row", alignItems: "center", marginVertical: 16 },
   line: { flex: 1, height: 1, backgroundColor: colors.border },
   or: { marginHorizontal: 14, color: colors.muted, fontFamily: fonts.medium, fontSize: 12 },
 
@@ -356,13 +356,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     height: 58,
-    borderRadius: 999,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
   },
   googleText: { marginLeft: 10, fontSize: 15, fontFamily: fonts.semiBold, color: colors.ink },
 
-  footerRow: { flexDirection: "row", justifyContent: "center", marginTop: 30 },
+  footerRow: { flexDirection: "row", justifyContent: "center", marginTop: 16 },
   footerText: { color: colors.muted, fontFamily: fonts.medium },
   loginLink: { color: colors.accent, fontFamily: fonts.bold }
 });

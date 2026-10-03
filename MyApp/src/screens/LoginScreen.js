@@ -158,8 +158,8 @@ export default function LoginScreen({ navigation }) {
           <View style={styles.logoBox}>
             <BrandLogo variant="horizontal" width={188} />
           </View>
-          <Text style={styles.welcomeText}>Welcome Back</Text>
-          <Text style={styles.subHeaderText}>Sign in to continue</Text>
+          <Text style={styles.welcomeText}>Sign in</Text>
+          <Text style={styles.subHeaderText}>Access your patient account</Text>
         </View>
 
         <ScrollView
@@ -253,7 +253,7 @@ const styles = StyleSheet.create({
   premiumHeader: {
     backgroundColor: colors.primary,
     paddingTop: 70,
-    paddingBottom: 40,
+    paddingBottom: 20,
     alignItems: "center",
     borderBottomLeftRadius: 40,
     borderBottomRightRadius: 40,
@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
   logoBox: {
     width: 220,
     height: 88,
-    borderRadius: 28,
+    borderRadius: 18,
     backgroundColor: colors.surface,
     alignItems: "center",
     justifyContent: "center",
@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
   welcomeText: { color: colors.ink, fontSize: 26, fontFamily: fonts.bold },
   subHeaderText: { color: colors.muted, fontSize: 14, fontFamily: fonts.medium, marginTop: 4 },
   scrollContent: { paddingBottom: 40 , maxWidth: 680, width: '100%', alignSelf: 'center' },
-  form: { paddingHorizontal: 30, paddingTop: 40 , maxWidth: 680, width: '100%', alignSelf: 'center' },
+  form: { paddingHorizontal: 16, paddingTop: 20 , maxWidth: 680, width: '100%', alignSelf: 'center' },
   label: { fontSize: 13, fontFamily: fonts.bold, color: colors.ink, marginBottom: 8, marginLeft: 4 },
   inputWrapper: {
     flexDirection: "row",
@@ -286,7 +286,7 @@ const styles = StyleSheet.create({
   input: { flex: 1, marginLeft: 12, fontFamily: fonts.medium, color: colors.ink, fontSize: 15 },
   inputError: { borderColor: "#DC2626", backgroundColor: "#FFF5F5" },
   errorText: { color: "#DC2626", fontSize: 12, marginTop: 6, marginBottom: 10, marginLeft: 8, fontFamily: fonts.medium },
-  rowBetween: { flexWrap: "wrap", rowGap: 12, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 30, marginTop: 10 },
+  rowBetween: { flexWrap: "wrap", rowGap: 12, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16, marginTop: 10 },
   rememberRow: { flexDirection: "row", alignItems: "center" },
   checkbox: { width: 20, height: 20, borderWidth: 1.5, borderColor: colors.border, borderRadius: 6, alignItems: "center", justifyContent: "center" },
   checkboxActive: { backgroundColor: colors.primary, borderColor: colors.accent },
@@ -295,12 +295,12 @@ const styles = StyleSheet.create({
   loginBtn: {
     backgroundColor: colors.primary,
     height: 58,
-    borderRadius: 999,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
   },
   loginBtnText: { color: colors.ink, fontSize: 16, fontFamily: fonts.bold },
-  footerRow: { flexWrap: "wrap", rowGap: 8, flexDirection: "row", justifyContent: "center", marginTop: 24 },
+  footerRow: { flexWrap: "wrap", rowGap: 8, flexDirection: "row", justifyContent: "center", marginTop: 16 },
   footerText: { color: colors.muted, fontFamily: fonts.medium },
   registerLink: { color: colors.accent, fontFamily: fonts.bold },
 });

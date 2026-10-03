@@ -197,7 +197,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 10,
-    borderRadius: 999,
+    borderRadius: 14,
     gap: 8,
   },
   tabButtonActive: {
@@ -215,10 +215,10 @@ const styles = StyleSheet.create({
   // PROMO STYLES
   promoCard: {
     backgroundColor: colors.primary,
-    borderRadius: 28,
-    padding: 20,
-    marginBottom: 24,
-    elevation: 3,
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 16,
+    elevation: 1,
     shadowColor: colors.ink,
     shadowOpacity: 0.08,
     shadowRadius: 10,
@@ -245,7 +245,7 @@ const styles = StyleSheet.create({
   bulletText: { color: colors.muted, fontFamily: fonts.medium, fontSize: 12 },
 
   // CATEGORY LISTING
-  categorySection: { marginBottom: 20 },
+  categorySection: { marginBottom: 16 },
   categoryHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
   catIconContainer: {
     width: 32,
@@ -258,12 +258,12 @@ const styles = StyleSheet.create({
 
   serviceItemCard: {
     backgroundColor: colors.surface,
-    borderRadius: 28,
+    borderRadius: 18,
     padding: 14,
     marginBottom: 10,
     borderWidth: 1,
     borderColor: colors.border,
-    elevation: 2,
+    elevation: 1,
     shadowColor: colors.ink,
     shadowOpacity: 0.04,
     shadowRadius: 8,
@@ -294,12 +294,12 @@ const styles = StyleSheet.create({
   branchesSub: { fontFamily: fonts.regular, fontSize: 13, color: colors.muted, marginBottom: 16 },
   branchCard: {
     backgroundColor: colors.surface,
-    borderRadius: 28,
+    borderRadius: 18,
     padding: 18,
     marginBottom: 16,
     borderWidth: 1,
     borderColor: colors.border,
-    elevation: 3,
+    elevation: 1,
     shadowColor: colors.ink,
     shadowOpacity: 0.06,
     shadowRadius: 10,
@@ -339,7 +339,7 @@ const styles = StyleSheet.create({
   bookBranchBtn: {
     backgroundColor: colors.primary,
     paddingVertical: 10,
-    borderRadius: 999,
+    borderRadius: 14,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",

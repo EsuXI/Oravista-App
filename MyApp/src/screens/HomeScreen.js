@@ -130,7 +130,7 @@ export default function HomeScreen({ navigation }) {
       });
 
       const interval = setInterval(() => {
-        if (activeUserId) fetchNotifications(activeUserId);
+        if (activeUserId) { fetchNotifications(activeUserId); fetchAppointments(activeUserId); }
       }, 15000);
 
       return () => clearInterval(interval);
@@ -431,7 +431,7 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.emptyListText}>No appointment activity yet.</Text>
         ) : (
           recentAppointments.map((item) => (
-            <View key={item.id} style={styles.historyCard}>
+            <TouchableOpacity key={item.id} accessibilityRole="button" accessibilityLabel={"View appointment: " + item.service_type} onPress={() => navigation.navigate("Appointments")} activeOpacity={0.8} style={styles.historyCard}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.historyService}>{item.service_type}</Text>
                 <Text style={styles.historySub}>
@@ -465,7 +465,7 @@ export default function HomeScreen({ navigation }) {
                   {item.status}
                 </Text>
               </View>
-            </View>
+            </TouchableOpacity>
           ))
         )}
       </ScrollView>
@@ -560,20 +560,20 @@ export default function HomeScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  homeAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.surface, borderWidth: 2, borderColor: colors.border, alignItems: "center", justifyContent: "center", marginRight: 10, overflow: "hidden" },
+  homeAvatar: { width: 48, height: 48, borderRadius: 18, backgroundColor: colors.surface, borderWidth: 2, borderColor: colors.border, alignItems: "center", justifyContent: "center", marginRight: 10, overflow: "hidden" },
   homeAvatarImage: { width: "100%", height: "100%" },
   container: { flex: 1, backgroundColor: colors.canvas },
   header: {
     backgroundColor: colors.primary,
     paddingTop: Platform.OS === "ios" ? 55 : 45,
     paddingBottom: 25,
-    paddingHorizontal: 22,
+    paddingHorizontal: 16,
     borderBottomLeftRadius: 30,
     borderBottomRightRadius: 30,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    elevation: 3,
+    elevation: 1,
   },
   welcomeSubtitle: { fontFamily: fonts.regular, fontSize: 13, color: colors.muted },
   welcomeTitle: { fontFamily: fonts.bold, fontSize: 24, color: colors.ink, marginTop: -2 },
@@ -581,7 +581,7 @@ const styles = StyleSheet.create({
   bellButton: {
     width: 46,
     height: 46,
-    borderRadius: 999,
+    borderRadius: 14,
     backgroundColor: "rgba(255, 255, 255, 0.15)",
     justifyContent: "center",
     alignItems: "center",
@@ -602,55 +602,57 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
   },
   badgeText: { color: colors.white, fontSize: 10, fontFamily: fonts.bold },
-  scrollContent: { padding: 20, paddingBottom: 40 , maxWidth: 680, width: '100%', alignSelf: 'center' },
+  scrollContent: { padding: 16, paddingBottom: 40 , maxWidth: 680, width: '100%', alignSelf: 'center' },
   sectionHeader: { fontFamily: fonts.bold, fontSize: 16, color: colors.ink, marginBottom: 12 },
   upcomingCard: {
-    backgroundColor: colors.primary,
-    borderRadius: 28,
-    padding: 20,
-    marginBottom: 24,
-    elevation: 3,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 16,
+    elevation: 1,
   },
   cardHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   badgeUpcoming: {
     backgroundColor: "rgba(255,255,255,0.2)",
     paddingHorizontal: 12,
     paddingVertical: 4,
-    borderRadius: 999,
+    borderRadius: 18,
   },
   badgeUpcomingText: { color: colors.ink, fontSize: 11, fontFamily: fonts.bold, textTransform: "uppercase" },
   upcomingPrice: { color: colors.ink, fontFamily: fonts.bold, fontSize: 16 },
   upcomingService: { color: colors.ink, fontFamily: fonts.bold, fontSize: 19, marginVertical: 10 },
   detailRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
   detailText: { color: colors.muted, fontFamily: fonts.medium, fontSize: 13 },
-  emptyCard: { alignItems: "center", paddingVertical: 20 },
+  emptyCard: { alignItems: "center", paddingVertical: 16 },
   emptyUpcomingText: { color: colors.muted, fontFamily: fonts.regular, fontSize: 13, marginTop: 8 },
   bookShortcutBtn: {
     marginTop: 14,
     backgroundColor: colors.surface,
     paddingHorizontal: 18,
     paddingVertical: 8,
-    borderRadius: 999,
+    borderRadius: 14,
   },
   bookShortcutBtnText: { color: colors.accent, fontFamily: fonts.bold, fontSize: 12 },
-  actionGrid: { flexDirection: "row", gap: 12, marginBottom: 24 },
+  actionGrid: { flexDirection: "row", gap: 12, marginBottom: 16 },
   actionCard: {
     flex: 1,
     backgroundColor: colors.surface,
-    borderRadius: 28,
+    borderRadius: 18,
     paddingVertical: 18,
     alignItems: "center",
     borderWidth: 1,
     borderColor: colors.border,
-    elevation: 2,
+    elevation: 1,
   },
   actionIconBox: { width: 48, height: 48, borderRadius: 16, justifyContent: "center", alignItems: "center", marginBottom: 8 },
   actionCardTitle: { fontFamily: fonts.semiBold, fontSize: 13, color: colors.ink },
   recentHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   viewAllText: { color: colors.accent, fontFamily: fonts.bold, fontSize: 13 },
   historyCard: {
+    gap: 10,
     backgroundColor: colors.surface,
-    borderRadius: 28,
+    borderRadius: 18,
     padding: 16,
     flexDirection: "row",
     alignItems: "center",
@@ -660,15 +662,15 @@ const styles = StyleSheet.create({
   },
   historyService: { fontFamily: fonts.semiBold, fontSize: 15, color: colors.ink },
   historySub: { fontFamily: fonts.regular, fontSize: 12, color: colors.muted, marginTop: 2 },
-  statusTag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+  statusTag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 18 },
   statusTagText: { fontSize: 11, fontFamily: fonts.bold, textTransform: "uppercase" },
-  tagCompleted: { backgroundColor: colors.completedSoft },
+  tagCompleted: { backgroundColor: 'transparent' },
   tagTextCompleted: { color: colors.completed },
-  tagConfirmed: { backgroundColor: "#D1FAE5" },
+  tagConfirmed: { backgroundColor: 'transparent' },
   tagTextConfirmed: { color: "#065F46" },
-  tagPending: { backgroundColor: "#FEF3C7" },
+  tagPending: { backgroundColor: 'transparent' },
   tagTextPending: { color: "#92400E" },
-  tagCancelled: { backgroundColor: "#FEE2E2" },
+  tagCancelled: { backgroundColor: 'transparent' },
   tagTextCancelled: { color: "#991B1B" },
   emptyListText: { textAlign: "center", color: colors.muted, fontFamily: fonts.regular, marginVertical: 15 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
@@ -677,7 +679,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     maxHeight: "80%",
-    padding: 20,
+    padding: 16,
   },
   modalHeader: {
     flexDirection: "row",
@@ -698,15 +700,15 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 999,
+    borderRadius: 14,
     backgroundColor: colors.lavender,
   },
   markAllReadText: { fontSize: 11, fontFamily: fonts.semiBold, color: colors.accent },
-  centerBox: { padding: 30, alignItems: "center" },
+  centerBox: { padding: 16, alignItems: "center" },
   notifCard: {
     backgroundColor: colors.input,
     padding: 14,
-    borderRadius: 28,
+    borderRadius: 18,
     marginBottom: 10,
     borderWidth: 1,
     borderColor: colors.border,
@@ -734,14 +736,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#DC2626",
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 999,
+    borderRadius: 14,
   },
   notifCancelBtnText: { color: colors.white, fontFamily: fonts.bold, fontSize: 12 },
   notifRescheduleBtn: {
     backgroundColor: colors.primary,
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 999,
+    borderRadius: 14,
   },
   notifRescheduleBtnText: { color: colors.ink, fontFamily: fonts.bold, fontSize: 12 },
   markReadSingleBtn: {
@@ -750,7 +752,7 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingVertical: 4,
     paddingHorizontal: 8,
-    borderRadius: 999,
+    borderRadius: 14,
     backgroundColor: colors.lavender,
     alignSelf: "flex-end",
     marginLeft: "auto",

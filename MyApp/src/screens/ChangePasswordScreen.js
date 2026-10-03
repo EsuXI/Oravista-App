@@ -274,7 +274,7 @@ const Error = ({ text }) => <Text style={styles.error}>{text}</Text>;
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.canvas },
   scrollContent: { paddingBottom: 40 , maxWidth: 680, width: '100%', alignSelf: 'center' },
-  form: { padding: 24 , maxWidth: 680, width: '100%', alignSelf: 'center' },
+  form: { padding: 16 , maxWidth: 680, width: '100%', alignSelf: 'center' },
   label: { marginBottom: 8, fontFamily: fonts.bold, color: colors.ink, fontSize: 13, marginLeft: 4 },
   spacer: { height: 16 },
   inputContainer: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 16, paddingHorizontal: 16, height: 56 },
@@ -286,8 +286,8 @@ const styles = StyleSheet.create({
   ruleRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
   ruleText: { marginLeft: 8, fontSize: 12, color: colors.muted, fontFamily: fonts.regular },
   buttonContainer: { marginTop: 32, gap: 12 },
-  saveBtn: { backgroundColor: colors.primary, height: 56, borderRadius: 999, justifyContent: "center", alignItems: "center", elevation: 2 },
+  saveBtn: { backgroundColor: colors.primary, height: 56, borderRadius: 14, justifyContent: "center", alignItems: "center", elevation: 1 },
   saveText: { color: colors.ink, fontSize: 16, fontFamily: fonts.bold },
-  cancelBtn: { height: 56, borderRadius: 999, justifyContent: "center", alignItems: "center", backgroundColor: colors.aquaSoft },
+  cancelBtn: { height: 56, borderRadius: 14, justifyContent: "center", alignItems: "center", backgroundColor: colors.aquaSoft },
   cancelText: { fontSize: 16, fontFamily: fonts.bold, color: colors.muted },
 });

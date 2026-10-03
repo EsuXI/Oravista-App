@@ -44,7 +44,7 @@ function load(filename) {
     if (name === 'react-native-safe-area-context') return { useSafeAreaInsets: () => ({ top: 24, bottom: 34, left: 0, right: 0 }) };
     if (name === '@react-native-async-storage/async-storage') return { getItem: async () => null };
     if (name === 'react-native-calendars') return { Calendar: 'Calendar' };
-    if (name === 'expo-image-picker') return {};
+    if (['expo-image-picker','expo-print','expo-sharing'].includes(name)) return {};
     if (name === '@react-native-community/datetimepicker') return 'DateTimePicker';
     throw new Error(`Add an explicit test stub for ${name}`);
   };
@@ -92,7 +92,7 @@ test('welcome actions retain the login and registration destinations', () => {
   const tree = component('screens/LandingScreen.js')({ navigation });
   const nodes = all(tree);
   assert.ok(nodes.some(n => n.type === 'ScrollView'));
-  nodes.find(n => n.type === 'TouchableOpacity' && text(n).includes('Log in')).props.onPress();
+  nodes.find(n => n.type === 'TouchableOpacity' && text(n) === 'Sign in').props.onPress();
   nodes.find(n => n.type === 'TouchableOpacity' && text(n).includes('Create an account')).props.onPress();
   assert.deepEqual(calls, [['Login'], ['Register']]);
 });
