@@ -97,29 +97,9 @@ export default function LoginScreen({ navigation }) {
         setPasswordError('The server did not return your account. Please try again.');
         return;
       }
-      // 2. Trigger 6-digit verification code
-      let generatedOtp = "";
-      let deliveryError = "";
-      try {
-        const otpRes = await fetch(`${API_BASE_URL}/api/send-otp`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: cleanEmail,
-            action: "login",
-          }),
-        });
-        const otpData = await otpRes.json();
-        if (otpRes.ok && /^\d{6}$/.test(String(otpData.generatedOtp || ""))) {
-          generatedOtp = String(otpData.generatedOtp);
-        } else {
-          deliveryError = otpData.message || "The code could not be sent. Please try Resend Code.";
-        }
-      } catch (otpErr) {
-        deliveryError = "Unable to request a code. Check your connection and try Resend Code.";
-        console.log("OTP trigger warning:", otpErr);
+      if (!data.challengeId || String(data.user.role || '').toLowerCase() !== 'patient') {
+        setPasswordError('Use a patient account to sign in to this app.'); return;
       }
-
       // 3. Persist remember flags for AuthGate
       if (remember) {
         await AsyncStorage.setItem("rememberMe", "true");
@@ -132,8 +112,7 @@ export default function LoginScreen({ navigation }) {
       navigation.navigate("OtpVerification", {
         email: cleanEmail,
         rememberMe: remember,
-        generatedOtp: generatedOtp,
-        deliveryError,
+        challengeId: data.challengeId,
         user: data.user,
       });
     } catch (error) {

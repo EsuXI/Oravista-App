@@ -48,8 +48,8 @@ export default function ForgotPasswordScreen({ navigation }) {
       }
 
       if (response.ok) {
-        if (!/^\d{6}$/.test(String(data.generatedOtp || ""))) {
-          setError("The server did not return a verification code. Please try again.");
+        if (!data.challengeId) {
+          setError("The server did not start verification. Please try again.");
           return;
         }
         Alert.alert(
@@ -59,7 +59,7 @@ export default function ForgotPasswordScreen({ navigation }) {
             text: "Verify Now",
             onPress: () => navigation.navigate("OtpVerification", {
               email: cleanEmail,
-              generatedOtp: data.generatedOtp ? String(data.generatedOtp) : "",
+              challengeId: data.challengeId,
               isResetFlow: true // Directs to ResetPasswordScreen upon verification
             })
           }]

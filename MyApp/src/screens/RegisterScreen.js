@@ -184,20 +184,6 @@ export default function RegisterScreen({ navigation }) {
               {loading ? <ActivityIndicator color={colors.ink} /> : <Text style={styles.createText}>Create Account</Text>}
             </TouchableOpacity>
 
-            {/* DIVIDER */}
-            <View style={styles.orRow}>
-              <View style={styles.line} />
-              <Text style={styles.or}>OR</Text>
-              <View style={styles.line} />
-            </View>
-
-            {/* GOOGLE BUTTON */}
-            <TouchableOpacity accessibilityRole="button" style={styles.googleBtn}>
-              <Ionicons name="logo-google" size={18} color="#DB4437" />
-              <Text style={styles.googleText}>Continue with Google</Text>
-            </TouchableOpacity>
-
-            {/* LOGIN LINK */}
             <View style={styles.footerRow}>
               <Text style={styles.footerText}>Already have an account? </Text>
               <TouchableOpacity accessibilityRole="button" onPress={() => navigation.navigate("Login")}>

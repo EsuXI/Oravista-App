@@ -69,7 +69,7 @@ test('Android Back dismisses a confirmation without executing the destructive ac
 });
 
 test('failed OTP delivery offers resend and blocks verification', () => {
-  const tree = component('screens/OtpVerificationScreen.js')({ navigation, route: { params: { email: 'test@example.test', generatedOtp: '', deliveryError: 'Failed to send email.' } } });
+  const tree = component('screens/OtpVerificationScreen.js')({ navigation, route: { params: { email: 'test@example.test', challengeId: '', deliveryError: 'Failed to send email.' } } });
   assert.ok(text(tree).includes('Failed to send email.'));
   assert.ok(!text(tree).includes('Sent to test@example.test'));
   const nodes = all(tree);
@@ -79,7 +79,7 @@ test('failed OTP delivery offers resend and blocks verification', () => {
 });
 
 test('OTP fields fit a 320px screen and keep verification disabled until all digits are entered', () => {
-  const tree = component('screens/OtpVerificationScreen.js')({ navigation, route: { params: { email: 'test@example.test', generatedOtp: '123456' } } });
+  const tree = component('screens/OtpVerificationScreen.js')({ navigation, route: { params: { email: 'test@example.test', challengeId: '123456' } } });
   const nodes = all(tree), inputs = nodes.filter(n => n.type === 'TextInput');
   assert.equal(inputs.length, 6);
   inputs.forEach(n => { assert.equal(n.props.style[0].flex, 1); assert.equal(n.props.style[0].width, undefined); });

@@ -26,7 +26,7 @@ export default function OtpVerificationScreen({ navigation, route }) {
   const isChangePasswordFlow = route?.params?.isChangePasswordFlow || false;
   const isResetFlow = route?.params?.isResetFlow || false;
   const newPassword = route?.params?.newPassword || null;
-  const initialOtp = route?.params?.generatedOtp || "";
+  const initialOtp = route?.params?.challengeId || "";
 
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [loading, setLoading] = useState(false);
@@ -100,157 +100,38 @@ export default function OtpVerificationScreen({ navigation, route }) {
     setLoading(true);
 
     try {
-      if (!/^\d{6}$/.test(String(currentOtp)) || code !== String(currentOtp)) {
-        setAlertConfig({
-          visible: true,
-          type: "error",
-          title: "Invalid Code",
-          message: "The code you entered does not match. Please check your email and try again.",
-          onPrimaryPress: () => setAlertConfig((prev) => ({ ...prev, visible: false })),
-        });
-        setLoading(false);
-        return;
-      }
-
-      // 1. Forgot Password flow -> Proceed to ResetPasswordScreen
+      const response = await fetch(`${API_BASE_URL}/api/verify-otp`, {
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({email,challengeId:currentOtp,code}),
+      });
+      const verified = await response.json();
+      if (!response.ok) throw new Error(verified.message || 'Verification failed.');
       if (isResetFlow) {
-        setLoading(false);
-        navigation.replace("ResetPassword", {
-          email: email.trim().toLowerCase(),
-          otpVerified: true,
+        if (!verified.verificationToken) throw new Error('Please request a new recovery code.');
+        navigation.replace('ResetPassword',{email:email.trim().toLowerCase(),verificationToken:verified.verificationToken});
+      } else if (isChangePasswordFlow) {
+        const changed = await fetch(`${API_BASE_URL}/api/update-password`,{
+          method:'PUT',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({id:user?.id || user?.user_id,oldPassword:route?.params?.oldPassword,newPassword,verificationToken:verified.verificationToken}),
         });
-        return;
+        const result=await changed.json();if(!changed.ok) throw new Error(result.message || 'Password update failed. Request another code.');
+        if(result.token) await AsyncStorage.setItem('userToken',result.token);
+        setAlertConfig({visible:true,type:'success',title:'Password Updated',message:'Your password has been changed.',onPrimaryPress:()=>navigation.reset({index:0,routes:[{name:'Home'}]})});
+      } else {
+        if(!verified.token || !verified.user?.id || verified.user.role !== 'patient') throw new Error('Please sign in with a patient account.');
+        await AsyncStorage.setItem('userToken',verified.token);
+        await AsyncStorage.setItem('userData',JSON.stringify(verified.user));
+        await AsyncStorage.setItem('userEmail',email);
+        navigation.reset({index:0,routes:[{name:'Home'}]});
       }
-
-      // 2. Change Password flow from Settings/Profile
-      if (isChangePasswordFlow) {
-        const oldPassword = route?.params?.oldPassword;
-        if (!oldPassword || !newPassword) {
-          setAlertConfig({
-            visible: true,
-            type: "error",
-            title: "Update Failed",
-            message: "Please go back and enter your current and new passwords again.",
-            onPrimaryPress: () => setAlertConfig((prev) => ({ ...prev, visible: false })),
-          });
-          return;
-        }
-        let resolvedId = user?.id || user?.user_id;
-
-        // If ID wasn't directly passed, resolve it from AsyncStorage or user-profile
-        if (!resolvedId) {
-          const storedUser = await AsyncStorage.getItem("userData");
-          if (storedUser) {
-            const parsed = JSON.parse(storedUser);
-            resolvedId = parsed?.id || parsed?.user_id;
-          }
-        }
-
-        if (!resolvedId && email) {
-          try {
-            const profileRes = await fetch(
-              `${API_BASE_URL}/api/user-profile?email=${encodeURIComponent(email.trim().toLowerCase())}`
-            );
-            if (profileRes.ok) {
-              const profile = await profileRes.json();
-              resolvedId = profile.id;
-            }
-          } catch (e) {}
-        }
-
-        if (!resolvedId) {
-          setAlertConfig({
-            visible: true,
-            type: "error",
-            title: "Update Failed",
-            message: "User session expired. Please re-login and try again.",
-            onPrimaryPress: () => setAlertConfig((prev) => ({ ...prev, visible: false })),
-          });
-          setLoading(false);
-          return;
-        }
-
-        const response = await fetch(`${API_BASE_URL}/api/update-password`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: resolvedId,
-            oldPassword,
-            newPassword: newPassword,
-          }),
-        });
-
-        const rawText = await response.text();
-        let data = {};
-        try {
-          data = JSON.parse(rawText);
-        } catch (e) {}
-
-        if (response.ok) {
-          navigation.setParams({ oldPassword: undefined, newPassword: undefined });
-          setAlertConfig({
-            visible: true,
-            type: "success",
-            title: "Password Changed",
-            message: "Your password has been updated successfully.",
-            onPrimaryPress: () => {
-              setAlertConfig((prev) => ({ ...prev, visible: false }));
-              navigation.reset({
-                index: 0,
-                routes: [{ name: "Home" }],
-              });
-            },
-          });
-        } else {
-          setAlertConfig({
-            visible: true,
-            type: "error",
-            title: "Update Failed",
-            message: data.message || "Failed to update password. Please try again.",
-            onPrimaryPress: () => setAlertConfig((prev) => ({ ...prev, visible: false })),
-          });
-        }
-        setLoading(false);
-        return;
-      }
-
-      if (!user || !(user.id || user.user_id)) throw new Error('Your login session is missing. Please log in again.');
-      // 3. Normal Login Session setup
-      if (user) {
-        await AsyncStorage.setItem("userData", JSON.stringify(user));
-        await AsyncStorage.setItem("userEmail", email);
-        if (user.token) {
-          await AsyncStorage.setItem("userToken", user.token);
-        } else { await AsyncStorage.removeItem("userToken"); }
-      }
-
-      if (route?.params?.rememberMe) {
-        await AsyncStorage.setItem("rememberMe", "true");
-      }
-
-      // Reset to main application stack (MainTabNavigator under route name "Home")
-      navigation.reset({
-        index: 0,
-        routes: [{ name: "Home" }],
-      });
-    } catch (error) {
-      console.log("OTP verify error:", error);
-      setAlertConfig({
-        visible: true,
-        type: "error",
-        title: "Connection Error",
-        message: "Could not connect to authentication server. Please try again.",
-        onPrimaryPress: () => setAlertConfig((prev) => ({ ...prev, visible: false })),
-      });
-    } finally {
-      setLoading(false);
-    }
+    } catch(error) {
+      setAlertConfig({visible:true,type:'error',title:'Verification Failed',message:error.message || 'Please try again.',onPrimaryPress:()=>setAlertConfig(prev=>({...prev,visible:false}))});
+    } finally {setLoading(false);}
   };
 
   const handleResend = async () => {
     if (loading || resendCooldown > 0) return;
     setLoading(true);
-    setCurrentOtp("");
     setOtp(["", "", "", "", "", ""]);
 
     try {
@@ -264,12 +145,13 @@ export default function OtpVerificationScreen({ navigation, route }) {
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           action: actionType,
+          challengeId: currentOtp,
         }),
       });
 
       const data = await response.json();
       if (response.ok) {
-        if (!/^\d{6}$/.test(String(data.generatedOtp || ""))) {
+        if (!data.challengeId) {
           setCurrentOtp("");
           setAlertConfig({
             visible: true,
@@ -280,7 +162,7 @@ export default function OtpVerificationScreen({ navigation, route }) {
           });
           return;
         }
-        setCurrentOtp(String(data.generatedOtp));
+        setCurrentOtp(data.challengeId);
         setOtp(["", "", "", "", "", ""]);
         setResendCooldown(30);
         setAlertConfig({

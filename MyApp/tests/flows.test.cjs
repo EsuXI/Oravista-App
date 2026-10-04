@@ -390,3 +390,61 @@ test('confirmed appointments expose both actions and late visits allow reschedul
     assert.deepEqual(h.calls.at(-1),['Booking',{rescheduleId:9}]);
   }
 });
+
+function fill(h,placeholder,value) {
+  const node=all(h.tree()).find(n=>n.props?.placeholder===placeholder);
+  (node.props.onChangeText || node.props.setValue)(value); h.render();
+}
+test('patient login opens verification without storing a session or receiving the code',async()=>{
+ const h=harness();let payload;
+ global.fetch=async(url,options)=>{payload=JSON.parse(options.body);return {...response({user:{id:7,role:'patient'},challengeId:'opaque-login'}),text:async()=>JSON.stringify({user:{id:7,role:'patient'},challengeId:'opaque-login'})};};
+ h.mount('LoginScreen');fill(h,'Enter your email','patient@example.test');fill(h,'Enter your password','OldPassword1!');
+ await button(h,'Login').props.onPress();h.render();
+ assert.equal(payload.password,'OldPassword1!');assert.equal(h.storage.get('userToken'),undefined);
+ assert.equal(h.calls[0][0],'OtpVerification');assert.equal(h.calls[0][1].challengeId,'opaque-login');assert.equal(h.calls[0][1].generatedOtp,undefined);
+});
+test('verification uses server response, never a locally matching code',async()=>{
+ const h=harness();const requests=[];
+ global.fetch=async(url,options)=>{requests.push([url,JSON.parse(options.body)]);return response({message:'Invalid or expired code.'},400);};
+ h.mount('OtpVerificationScreen',{route:{params:{email:'patient@example.test',challengeId:'opaque-login'}}});
+ all(h.tree()).find(n=>n.type==='TextInput').props.onChangeText('123456');h.render();
+ await button(h,'Verify & Proceed').props.onPress();h.render();
+ assert.ok(requests[0][0].endsWith('/api/verify-otp'));assert.equal(requests[0][1].code,'123456');assert.equal(requests[0][1].challengeId,'opaque-login');
+ assert.equal(h.calls.length,0);assert.equal(h.storage.get('userToken'),undefined);assert.match(alert(h).props.message,/Invalid/);
+ global.fetch=async()=>response({token:'verified-session',user:{id:7,role:'patient'}});
+ await button(h,'Verify & Proceed').props.onPress();h.render();
+ assert.equal(h.storage.get('userToken'),'verified-session');assert.equal(h.calls[0][0].routes[0].name,'Home');
+});
+test('recovery code delivery accepts an opaque challenge',async()=>{
+ const h=harness();global.fetch=async()=>({ok:true,text:async()=>JSON.stringify({challengeId:'recovery-challenge'})});
+ h.mount('ForgotPasswordScreen');fill(h,'Enter your registered email','patient@example.test');await button(h,'Send Code').props.onPress();
+ assert.equal(h.alerts[0][0],'Code Sent');h.alerts[0][2][0].onPress();assert.equal(h.calls[0][1].challengeId,'recovery-challenge');assert.equal(h.calls[0][1].isResetFlow,true);
+});
+test('recovery verification passes server proof to reset and reset submits that proof',async()=>{
+ const h=harness();global.fetch=async()=>response({verificationToken:'recovery-proof'});
+ h.mount('OtpVerificationScreen',{route:{params:{email:'patient@example.test',challengeId:'recovery',isResetFlow:true}}});
+ all(h.tree()).find(n=>n.type==='TextInput').props.onChangeText('123456');h.render();await button(h,'Verify & Proceed').props.onPress();
+ assert.equal(h.calls[0][0],'ResetPassword');assert.equal(h.calls[0][1].verificationToken,'recovery-proof');
+ const next=harness();let payload;
+ global.fetch=async(url,options)=>{payload=JSON.parse(options.body);return {ok:false,text:async()=>JSON.stringify({message:'Expired proof'})};};
+ next.mount('ResetPasswordScreen',{route:{params:h.calls[0][1]}});fill(next,'Enter new password','NewPassword1!');fill(next,'Confirm new password','NewPassword1!');await button(next,'Reset Password').props.onPress();
+ assert.equal(payload.verificationToken,'recovery-proof');assert.equal(next.calls.length,0);
+});
+test('password change requests a purpose-specific challenge and passes current password',async()=>{
+ const h=harness();let payload;
+ global.fetch=async(url,options)=>{payload=JSON.parse(options.body);return {...response({challengeId:'change-challenge'}),headers:{get:()=> 'application/json'}};};
+ h.mount('ChangePasswordScreen');await h.runEffects();fill(h,'Enter current password','OldPassword1!');fill(h,'Enter new password','NewPassword1!');fill(h,'Confirm new password','NewPassword1!');
+ await button(h,'Verify & Update').props.onPress();assert.equal(payload.action,'change_password');assert.equal(h.calls[0][1].challengeId,'change-challenge');assert.equal(h.calls[0][1].oldPassword,'OldPassword1!');
+});
+test('inactive Google auth action is removed from registration and login',()=>{
+ for(const screen of ['RegisterScreen','LoginScreen']) {const h=harness();h.mount(screen);assert.ok(!text(h.tree()).includes('Google'));}
+});
+test('session transport sends credentials only to our API and handles session expiry',async()=>{
+ const h=harness();h.storage.set('userToken','fixture-session');const requests=[];
+ global.fetch=async(url,options)=>{requests.push({url,options});return {status:200};};
+ const {installAuthFetch,onSessionExpired}=h.load('src/utils/authFetch');const {API_BASE_URL}=h.load('src/config/config');
+ installAuthFetch();await global.fetch(API_BASE_URL+'/api/patient-records/7');await global.fetch('https://example.test/api/records');
+ assert.equal(requests[0].options.headers.get('Authorization'),'Bearer fixture-session');assert.equal(requests[1].options.headers,undefined);
+ let expired=false;onSessionExpired(()=>{expired=true;});global.fetch=async()=>({status:401,clone:()=>({json:async()=>({code:'SESSION_EXPIRED'})})});installAuthFetch();
+ await global.fetch(API_BASE_URL+'/api/patient-records/7');assert.equal(expired,true);assert.equal(h.storage.has('userToken'),false);
+});

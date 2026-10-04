@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
+import { onSessionExpired } from "../utils/authFetch";
 import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
 import { colors } from '../theme/colors';
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -27,8 +28,12 @@ const linking = {
 };
 
 export default function AppNavigator() {
+  const navigationRef = useRef(null);
+  useEffect(() => onSessionExpired(() => {
+    if (navigationRef.current?.isReady()) navigationRef.current.resetRoot({index:0,routes:[{name:'Login'}]});
+  }), []);
   return (
-    <NavigationContainer linking={linking} theme={{ ...DefaultTheme, colors: { ...DefaultTheme.colors, primary: colors.accent, background: colors.canvas, card: colors.surface, text: colors.ink, border: colors.border } }}>
+    <NavigationContainer ref={navigationRef} linking={linking} theme={{ ...DefaultTheme, colors: { ...DefaultTheme.colors, primary: colors.accent, background: colors.canvas, card: colors.surface, text: colors.ink, border: colors.border } }}>
       <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.canvas } }} initialRouteName="Splash">
 
         <Stack.Screen name="Splash" component={SplashScreen} />

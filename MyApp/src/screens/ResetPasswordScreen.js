@@ -52,8 +52,8 @@ export default function ResetPasswordScreen({ navigation, route }) {
 
     try {
       const cleanEmail = email.trim().toLowerCase();
-      // UI flow guard only; the existing server checks no OTP proof on this route.
-      if (!cleanEmail || route?.params?.otpVerified !== true) {
+      // The server requires a short-lived, single-use recovery token.
+      if (!cleanEmail || !route?.params?.verificationToken) {
         Alert.alert("Verification Required", "Please request and verify an email code first.", [
           { text: "Request Code", onPress: () => navigation.navigate("ForgotPassword") },
         ]);
@@ -67,6 +67,7 @@ export default function ResetPasswordScreen({ navigation, route }) {
         body: JSON.stringify({
           email: cleanEmail,
           newPassword: newPassword,
+          verificationToken: route.params.verificationToken,
         }),
       });
 
@@ -77,7 +78,7 @@ export default function ResetPasswordScreen({ navigation, route }) {
       } catch (e) {}
 
       if (response.ok) {
-        navigation.setParams({ otpVerified: false });
+        navigation.setParams({ verificationToken: null });
         Alert.alert("Success", "Your password has been reset successfully!", [
           { text: "Login Now", onPress: () => navigation.reset({ index: 0, routes: [{ name: "Login" }] }) },
         ]);
