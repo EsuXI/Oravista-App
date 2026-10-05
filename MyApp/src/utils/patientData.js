@@ -99,7 +99,12 @@ export async function loadBillings(baseUrl, userId) {
     status: record.billing_status || 'Not provided',
     date: displayDate(record.appointment_date),
     invoice_path: typeof record.receipt_details === 'string' ? record.receipt_details : null,
+    receipt_details: record.receipt_details,
   }));
   const incomplete = records.some(r => r.status === 'Not provided' || r.amount === null || !Number.isFinite(Number(r.amount)));
-  return { records, totalOutstanding: incomplete ? null : records.filter(r => r.status.toLowerCase() === 'pending').reduce((sum, r) => sum + Number(r.amount), 0) };
+  return { records, totalOutstanding: incomplete ? null : records.filter(r => r.status.toLowerCase() === 'approved').reduce((sum, r) => {
+    let details = r.receipt_details;
+    if (typeof details === 'string') { try { details = JSON.parse(details); } catch { details = {}; } }
+    return sum + Math.max(0, Number(r.amount) - Math.max(0, Number(details?.paid) || 0));
+  }, 0) };
 }

@@ -21,7 +21,7 @@ import ScreenHeader from "../components/ScreenHeader";
 import CustomAlertModal from "../components/CustomAlertModal";
 import { API_BASE_URL } from "../config/config";
 
-const STATUS_FILTERS = ["All", "Pending", "Paid"];
+const STATUS_FILTERS = ["All", "Pending", "Approved", "Paid"];
 
 export default function BillingsScreen({ navigation }) {
   const [visibleCount, setVisibleCount] = useState(20);
@@ -205,7 +205,7 @@ export default function BillingsScreen({ navigation }) {
                     {money(bill.amount)}
                   </Text>
                   <View style={styles.statusBadge}>
-                    <Text style={[styles.statusText, (bill.status || "").toLowerCase() === "paid" ? styles.paidText : styles.pendingText]}>
+                    <Text style={[styles.statusText, (bill.status || "").toLowerCase() === "paid" ? styles.paidText : (bill.status || "").toLowerCase() === "approved" ? styles.approvedText : styles.pendingText]}>
                       {bill.status || "Not provided"}
                     </Text>
                   </View>
@@ -262,5 +262,6 @@ const styles = StyleSheet.create({
   pendingBg: { backgroundColor: "#FEF3C7" },
   statusText: { fontSize: 10, fontFamily: fonts.bold, textTransform: "uppercase", letterSpacing: 0.5 },
   paidText: { color: "#065F46" },
+  approvedText: { color: "#176B87" },
   pendingText: { color: "#92400E" },
 });
