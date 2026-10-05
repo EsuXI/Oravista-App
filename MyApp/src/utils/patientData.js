@@ -108,3 +108,16 @@ export async function loadBillings(baseUrl, userId) {
     return sum + Math.max(0, Number(r.amount) - Math.max(0, Number(details?.paid) || 0));
   }, 0) };
 }
+
+// Older API versions may omit payment fields: never invent a partial payment.
+export function billingBreakdown(bill) {
+  const number = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? Number(value) : null;
+  const charge = number(bill.amount);
+  let details = bill.receipt_details;
+  if (typeof details === 'string') { try { details = JSON.parse(details); } catch { details = null; } }
+  const settled = String(bill.status).toLowerCase() === 'paid';
+  const paid = number(bill.paid) ?? number(details?.paid) ?? (settled ? charge : null);
+  const balance = number(bill.balance) ?? (charge !== null && paid !== null ? Math.max(0, charge - paid) : null);
+  const paymentStatus = balance === 0 ? 'Fully paid' : paid > 0 ? 'Partially paid' : paid === 0 ? 'Unpaid' : 'Payment details unavailable';
+  return { charge, paid, balance, paymentStatus };
+}

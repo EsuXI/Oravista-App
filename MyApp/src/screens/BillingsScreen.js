@@ -1,4 +1,4 @@
-import { loadBillings, fileUrl, money } from '../utils/patientData';
+import { loadBillings, fileUrl, money, billingBreakdown } from '../utils/patientData';
 import LoadError from '../components/LoadError';
 import ScreenBackground from '../components/ScreenBackground';
 import { colors } from '../theme/colors';
@@ -105,6 +105,7 @@ export default function BillingsScreen({ navigation }) {
   };
 
   const showBillDetails = (bill) => {
+    const totals = billingBreakdown(bill);
     setAlertConfig({
       visible: true,
       type: "info",
@@ -113,7 +114,10 @@ export default function BillingsScreen({ navigation }) {
       details: [
         { label: "Record ID", value: String(bill.id ?? "Not provided") },
         { label: "Procedure", value: bill.title || "Dental Treatment" },
-        { label: "Amount", value: money(bill.amount), highlight: true },
+        { label: "Charge", value: money(totals.charge) },
+        { label: "Paid", value: money(totals.paid) },
+        { label: "Remaining", value: money(totals.balance), highlight: true },
+        { label: "Payment", value: totals.paymentStatus },
         { label: "Status", value: bill.status || "Not provided" },
         { label: "Date", value: bill.date || "N/A" },
       ],
@@ -181,7 +185,9 @@ export default function BillingsScreen({ navigation }) {
               <Text style={styles.emptyText}>No billing records found.</Text>
             </View>
           ) : (
-            filteredBillings.slice(0, visibleCount).map((bill) => (
+            filteredBillings.slice(0, visibleCount).map((bill) => {
+              const totals = billingBreakdown(bill);
+              return (
               <TouchableOpacity accessibilityRole="button"
                 key={bill.id}
                 style={styles.card}
@@ -201,17 +207,20 @@ export default function BillingsScreen({ navigation }) {
                 <Text style={styles.date}>{bill.date}</Text>
 
                 <View style={styles.cardBottom}>
-                  <Text style={styles.amount}>
-                    {money(bill.amount)}
-                  </Text>
+                  <View style={styles.breakdown}>
+                    <Text style={styles.paymentLine}>Charge: {money(totals.charge)}</Text>
+                    <Text style={styles.paymentLine}>Paid: {money(totals.paid)}</Text>
+                    <Text style={styles.remaining}>Remaining: {money(totals.balance)}</Text>
+                  </View>
                   <View style={styles.statusBadge}>
                     <Text style={[styles.statusText, (bill.status || "").toLowerCase() === "paid" ? styles.paidText : (bill.status || "").toLowerCase() === "approved" ? styles.approvedText : styles.pendingText]}>
                       {bill.status || "Not provided"}
                     </Text>
+                    <Text style={styles.paymentState}>{totals.paymentStatus}</Text>
                   </View>
                 </View>
               </TouchableOpacity>
-            ))
+            );})
           )}
           {visibleCount < filteredBillings.length && <TouchableOpacity accessibilityRole="button" onPress={() => setVisibleCount(count => count + 20)} style={{minHeight:44,padding:12,alignItems:"center",backgroundColor:colors.aquaSoft,borderRadius:14}}><Text style={{color:colors.accent,fontFamily:fonts.semiBold}}>Show 20 more bills</Text></TouchableOpacity>}
         </ScrollView>
@@ -255,9 +264,13 @@ const styles = StyleSheet.create({
   downloadBtn: { width: 44, height: 44, borderRadius: 14, backgroundColor: colors.lavender, alignItems: "center", justifyContent: "center" },
   title: { fontSize: 15, fontFamily: fonts.bold, color: colors.ink },
   date: { fontSize: 12, color: colors.muted, fontFamily: fonts.medium, marginTop: 4 },
-  cardBottom: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10 },
+  breakdown: { flexShrink: 1, gap: 3 },
+  paymentLine: { fontSize: 12, color: colors.muted, fontFamily: fonts.medium },
+  remaining: { fontSize: 14, color: colors.ink, fontFamily: fonts.bold },
+  paymentState: { fontSize: 11, color: colors.muted, textAlign: "right", flexShrink: 1 },
+  cardBottom: { flexWrap: "wrap", gap: 8, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10 },
   amount: { fontSize: 18, fontFamily: fonts.bold, color: colors.ink },
-  statusBadge: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 18, minWidth: 80, alignItems: "center" },
+  statusBadge: { paddingVertical: 6, maxWidth: "100%", gap: 4, alignItems: "flex-end", flexShrink: 1 },
   paidBg: { backgroundColor: "#D1FAE5" },
   pendingBg: { backgroundColor: "#FEF3C7" },
   statusText: { fontSize: 10, fontFamily: fonts.bold, textTransform: "uppercase", letterSpacing: 0.5 },

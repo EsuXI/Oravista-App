@@ -17,3 +17,12 @@ test('billing preserves approval and falls back without charging unapproved book
  const result=await loadBillings('https://test',7);assert.equal(result.totalOutstanding,750);assert.equal(result.records[1].status,'Approved');
  } finally {global.fetch=old;}
 });
+
+test('breakdown distinguishes charge, partial payment and remaining balance',async()=>{
+ const {billingBreakdown}=await api();
+ assert.deepEqual(billingBreakdown({amount:1000,paid:250,balance:750,status:'Approved'}),{charge:1000,paid:250,balance:750,paymentStatus:'Partially paid'});
+ assert.equal(billingBreakdown({amount:500,paid:500,balance:0,status:'Paid'}).paymentStatus,'Fully paid');
+ assert.equal(billingBreakdown({amount:1000,paid:0,balance:1000,status:'Approved'}).paymentStatus,'Unpaid');
+ assert.equal(billingBreakdown({amount:1000,status:'Approved'}).paid,null);
+ assert.equal(billingBreakdown({amount:1000,receipt_details:{paid:250},status:'Approved'}).balance,750);
+});
