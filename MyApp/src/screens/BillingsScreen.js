@@ -85,7 +85,7 @@ export default function BillingsScreen({ navigation }) {
         visible: true,
         type: "info",
         title: "Invoice Not Available",
-        message: "An official PDF receipt has not been uploaded for this item yet.",
+        message: "The invoice link is unavailable. Reopen Billings to retry. If this bill is approved or paid and the problem continues, contact the clinic.",
         details: [],
         onPrimaryPress: () => setAlertConfig((prev) => ({ ...prev, visible: false })),
       });
