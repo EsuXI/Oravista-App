@@ -1,3 +1,4 @@
+import { refreshUserProfile } from '../utils/userProfile';
 import { fileUrl } from '../utils/patientData';
 import { API_BASE_URL } from '../config/config';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -27,15 +28,20 @@ export default function ProfileScreen({ navigation }) {
 
   useFocusEffect(
     useCallback(() => {
-      loadUserData();
+      let active = true;
+      loadUserData(() => active);
+      return () => { active = false; };
     }, [])
   );
 
-  const loadUserData = async () => {
+  const loadUserData = async (active = () => true) => {
     try {
       const stored = await AsyncStorage.getItem("userData");
       if (stored) {
-        setUser(JSON.parse(stored));
+        const cached = JSON.parse(stored);
+        if (active()) setUser(cached);
+        const fresh = await refreshUserProfile(cached);
+        if (fresh && active()) setUser(fresh);
       }
     } catch (err) {
       console.log("Error loading profile data:", err);

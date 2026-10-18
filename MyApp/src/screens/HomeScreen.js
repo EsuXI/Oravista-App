@@ -1,3 +1,4 @@
+import { refreshUserProfile } from '../utils/userProfile';
 import { fileUrl, requestJson, requireArray, nextAppointment, money, displayDate } from '../utils/patientData';
 import LoadError from '../components/LoadError';
 import BrandLogo from '../components/BrandLogo';
@@ -68,6 +69,11 @@ export default function HomeScreen({ navigation }) {
           firstName: parsed.firstName || parsed.first_name || "User",
           branch: parsed.branch || "Gil Puyat, Pasay",
         });
+        try {
+          const fresh = await refreshUserProfile(parsed);
+          if (fresh) setUserData({ ...fresh, firstName: fresh.firstName || 'User' });
+        } catch (error) { console.log('Profile refresh unavailable:', error.message); }
+
       }
 
       if (!activeId) {

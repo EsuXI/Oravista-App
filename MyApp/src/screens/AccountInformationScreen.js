@@ -1,3 +1,4 @@
+import { refreshUserProfile } from '../utils/userProfile';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenBackground from '../components/ScreenBackground';
 import { colors } from '../theme/colors';
@@ -12,18 +13,20 @@ export default function AccountInformationScreen({ navigation }) {
   const [user, setUser] = useState(null);
 
   useEffect(() => {
-    const unsubscribe = navigation.addListener("focus", () => {
-      loadUserData();
-    });
-    loadUserData();
-    return unsubscribe;
+    let active = true;
+    const unsubscribe = navigation.addListener("focus", () => { loadUserData(() => active); });
+    loadUserData(() => active);
+    return () => { active = false; unsubscribe(); };
   }, [navigation]);
 
-  const loadUserData = async () => {
+  const loadUserData = async (active = () => true) => {
     try {
       const stored = await AsyncStorage.getItem("userData");
       if (stored) {
-        setUser(JSON.parse(stored));
+        const cached = JSON.parse(stored);
+        if (active()) setUser(cached);
+        const fresh = await refreshUserProfile(cached);
+        if (fresh && active()) setUser(fresh);
       }
     } catch (err) {
       console.log("Error reading userData:", err);
