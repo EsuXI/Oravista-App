@@ -1,3 +1,4 @@
+import useLiveUserProfile from '../hooks/useLiveUserProfile';
 import { refreshUserProfile } from '../utils/userProfile';
 import { fileUrl } from '../utils/patientData';
 import { API_BASE_URL } from '../config/config';
@@ -24,6 +25,7 @@ import CustomAlertModal from "../components/CustomAlertModal";
 export default function ProfileScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const [user, setUser] = useState(null);
+  useLiveUserProfile(setUser);
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
 
   useFocusEffect(

@@ -1,3 +1,5 @@
+import { refreshUserProfile } from '../utils/userProfile';
+import { profileAge, profileSex } from '../utils/profileFields';
 import { requestJson, fileUrl, validBirthDate, dateKey } from '../utils/patientData';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenBackground from '../components/ScreenBackground';
@@ -12,6 +14,7 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
+  Modal,
   Platform,
   StatusBar,
 } from "react-native";
@@ -33,7 +36,9 @@ export default function EditProfileScreen({ navigation }) {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [dob, setDob] = useState("");
-  const [age, setAge] = useState("");
+  const age = profileAge(dob) == null ? "" : String(profileAge(dob));
+  const [showSexPicker, setShowSexPicker] = useState(false);
+  const originalInfoRef = useRef(null);
   const [sex, setSex] = useState("");
   const [occupation, setOccupation] = useState("");
 
@@ -64,7 +69,8 @@ export default function EditProfileScreen({ navigation }) {
         const cached = JSON.parse(stored);
         const accountEmail = cached.email || await AsyncStorage.getItem('userEmail');
         if (!accountEmail) throw new Error('Please log in again to edit your profile.');
-        const fresh = await requestJson(`${API_BASE_URL}/api/user-profile?email=${encodeURIComponent(accountEmail)}`);
+        const fresh = await refreshUserProfile(cached);
+        if (!fresh) throw new Error('Your session changed. Please log in again.');
         if (!fresh.id || String(fresh.id) !== String(cached.id || cached.user_id)) throw new Error('Could not load your profile. Please log in again.');
         const profileFields = ['id', 'user_id', 'email', 'first_name', 'last_name', 'firstName', 'lastName', 'phone', 'dob', 'age', 'sex', 'occupation', 'blood_type', 'allergies', 'insurance', 'policy_number', 'profile_picture', 'profile_pic', 'profile_image', 'profileImage', 'role', 'branch', 'selectedBranch'];
         const merged = { ...cached, ...fresh };
@@ -75,9 +81,12 @@ export default function EditProfileScreen({ navigation }) {
         setEmail(parsed.email || "");
         setPhone(parsed.phone || "");
         setDob(dateKey(parsed.dob));
-        setAge(parsed.age != null ? String(parsed.age) : "");
-        setSex(parsed.sex || "");
+        setSex(profileSex(parsed.sex));
         setOccupation(parsed.occupation || "");
+        originalInfoRef.current = {
+          firstName: parsed.first_name || parsed.firstName || '', lastName: parsed.last_name || parsed.lastName || '',
+          email: parsed.email || '', phone: parsed.phone || '', dob: dateKey(parsed.dob), sex: profileSex(parsed.sex), occupation: parsed.occupation || ''
+        };
         setProfileImage(fileUrl(parsed.profile_picture || parsed.profile_pic || parsed.profile_image || parsed.profileImage, API_BASE_URL));
       }
     } catch (err) {
@@ -139,7 +148,7 @@ export default function EditProfileScreen({ navigation }) {
     }
 
     if (dob.trim() && !validBirthDate(dob.trim())) newErrors.dob = 'Enter a real date in YYYY-MM-DD format, no later than today.';
-    if (age.trim() && !/^\d+$/.test(age.trim())) newErrors.age = 'Enter a whole, non-negative age.';
+    if (sex && !['Male','Female'].includes(sex)) newErrors.sex = 'Select Male or Female.';
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -189,51 +198,35 @@ export default function EditProfileScreen({ navigation }) {
       }
       formattedPhone = formattedPhone.replace(/[\s-]/g, "");
 
-      const payload = {
-        id: user.id,
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        first_name: firstName.trim(),
-        last_name: lastName.trim(),
-        email: email.trim(),
-        phone: formattedPhone || null,
-        dob: dob.trim() || null,
-        age: age.trim() ? parseInt(age.trim(), 10) : null,
-        sex: sex.trim() || null,
-        occupation: occupation.trim() || null,
-        profilePic: finalProfilePicUrl || null,
-        profile_image: finalProfilePicUrl || null,
-        // The web server replaces these columns even though this form does not edit them.
-        blood_type: user.blood_type ?? null,
-        allergies: user.allergies ?? null,
-        insurance: user.insurance ?? null,
-        policy_number: user.policy_number ?? null,
+      const values = {
+        firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(),
+        phone: formattedPhone || null, dob: dob.trim() || null,
+        sex: sex || null, occupation: occupation.trim() || null,
       };
-
-      await requestJson(`${API_BASE_URL}/api/update-profile`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-      });
+      const changes = Object.fromEntries(Object.entries(values).filter(([key, value]) => String(value ?? '') !== String(originalInfoRef.current?.[key] ?? '')));
+      let savedProfile = null;
+      if (Object.keys(changes).length) {
+        const result = await requestJson(`${API_BASE_URL}/api/update-profile`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: user.id, ...changes }),
+        });
+        savedProfile = result.user;
+      }
       savedOnServer = true;
       {
-        const updatedUser = {
-          ...user,
-          first_name: firstName.trim(),
-          firstName: firstName.trim(),
-          lastName: lastName.trim(),
-          email: email.trim(),
-          last_name: lastName.trim(),
-          phone: formattedPhone,
-          dob: dob.trim(),
-          age: age.trim() ? parseInt(age.trim(), 10) : null,
-          sex: sex.trim(),
-          occupation: occupation.trim(),
-          profile_picture: finalProfilePicUrl,
-          profile_pic: finalProfilePicUrl,
-          profile_image: finalProfilePicUrl,
-        };
+        const current = JSON.parse(await AsyncStorage.getItem('userData') || 'null');
+        if (!current || String(current.id || current.user_id) !== String(user.id)) throw new Error('Your session changed. Please log in again.');
+        const updatedUser = { ...current, ...savedProfile, ...changes };
+        updatedUser.first_name = updatedUser.firstName = savedProfile?.first_name ?? changes.firstName ?? current.first_name ?? current.firstName ?? '';
+        updatedUser.last_name = updatedUser.lastName = savedProfile?.last_name ?? changes.lastName ?? current.last_name ?? current.lastName ?? '';
+        updatedUser.dob = dateKey(updatedUser.dob);
+        updatedUser.age = profileAge(updatedUser.dob);
+        updatedUser.sex = profileSex(updatedUser.sex);
+        const savedPhoto = newImagePickerAsset ? finalProfilePicUrl : (savedProfile && Object.hasOwn(savedProfile, 'profile_picture') ? savedProfile.profile_picture : current.profile_picture);
+        updatedUser.profile_picture = updatedUser.profile_pic = updatedUser.profile_image = savedPhoto;
+        delete updatedUser.password;
 
         await AsyncStorage.setItem("userData", JSON.stringify(updatedUser));
-        await AsyncStorage.setItem("userEmail", email.trim());
+        await AsyncStorage.setItem("userEmail", updatedUser.email || email.trim());
         setNewImagePickerAsset(null);
 
         setAlertConfig({
@@ -384,8 +377,9 @@ export default function EditProfileScreen({ navigation }) {
               <TextInput accessibilityLabel="Age"
                 style={styles.input}
                 value={age}
-                onChangeText={setAge}
-                placeholder="Age"
+                editable={false}
+                accessibilityHint="Calculated automatically from date of birth"
+                placeholder="Auto-computed"
                 placeholderTextColor={colors.muted}
                 keyboardType="numeric"
                 maxLength={3}
@@ -396,14 +390,24 @@ export default function EditProfileScreen({ navigation }) {
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Sex / Gender</Text>
-            <TextInput accessibilityLabel="e.g. Male / Female"
-              style={styles.input}
-              value={sex}
-              onChangeText={setSex}
-              placeholder="e.g. Male / Female"
-              placeholderTextColor={colors.muted}
-              maxLength={20}
-            />
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Select Sex" disabled={loading} onPress={() => setShowSexPicker(true)} style={[styles.input, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+              <Text style={{ color: colors.ink }}>{sex || 'Select Sex'}</Text>
+              <Ionicons name="chevron-down" size={18} color={colors.ink} />
+            </TouchableOpacity>
+            <Modal visible={showSexPicker} transparent animationType="fade" onRequestClose={() => setShowSexPicker(false)}>
+              <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: 'rgba(0,0,0,0.4)' }}>
+                <View accessibilityViewIsModal style={{ backgroundColor: 'white', padding: 20, borderRadius: 20 }}>
+                  <Text style={[styles.label, { marginBottom: 16 }]}>Select Sex</Text>
+                  {['', 'Male', 'Female'].map(value => (
+                    <TouchableOpacity key={value || 'empty'} accessibilityRole="radio" accessibilityLabel={value || 'Select Sex (blank)'} accessibilityState={{ checked: sex === value }} onPress={() => { setSex(value); setShowSexPicker(false); }} style={{ padding: 16 }}>
+                      <Text style={{ color: colors.ink }}>{value || 'Select Sex'}</Text>
+                    </TouchableOpacity>
+                  ))}
+                  <TouchableOpacity accessibilityRole="button" onPress={() => setShowSexPicker(false)} style={{ padding: 16 }}><Text style={{ color: colors.ink }}>Cancel</Text></TouchableOpacity>
+                </View>
+              </View>
+            </Modal>
+            {errors.sex && <Text style={styles.errorText}>{errors.sex}</Text>}
           </View>
 
           <View style={styles.inputGroup}>

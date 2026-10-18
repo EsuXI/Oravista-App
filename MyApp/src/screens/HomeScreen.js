@@ -1,3 +1,4 @@
+import useLiveUserProfile from '../hooks/useLiveUserProfile';
 import { refreshUserProfile } from '../utils/userProfile';
 import { fileUrl, requestJson, requireArray, nextAppointment, money, displayDate } from '../utils/patientData';
 import LoadError from '../components/LoadError';
@@ -28,6 +29,7 @@ import CustomAlertModal from "../components/CustomAlertModal";
 
 export default function HomeScreen({ navigation }) {
   const insets = useSafeAreaInsets();
+  useLiveUserProfile(profile => setUserData(profile));
   const [userData, setUserData] = useState({ id: null, firstName: "User", branch: "Main Branch" });
   const [avatarFailed, setAvatarFailed] = useState(false);
   const [upcomingAppt, setUpcomingAppt] = useState(null);

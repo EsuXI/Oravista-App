@@ -1,3 +1,5 @@
+import { profileAge } from '../utils/profileFields';
+import useLiveUserProfile from '../hooks/useLiveUserProfile';
 import { refreshUserProfile } from '../utils/userProfile';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ScreenBackground from '../components/ScreenBackground';
@@ -11,6 +13,7 @@ import { fonts } from "../theme/fonts";
 export default function AccountInformationScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const [user, setUser] = useState(null);
+  useLiveUserProfile(setUser);
 
   useEffect(() => {
     let active = true;
@@ -60,7 +63,7 @@ export default function AccountInformationScreen({ navigation }) {
           <InfoRow icon="mail-outline" label="Email Address" value={user?.email || "—"} />
           <InfoRow icon="call-outline" label="Phone Number" value={user?.phone || "—"} />
           <InfoRow icon="calendar-outline" label="Date of Birth" value={user?.dob || "—"} />
-          <InfoRow icon="hourglass-outline" label="Age" value={user?.age != null ? String(user.age) : "—"} />
+          <InfoRow icon="hourglass-outline" label="Age" value={profileAge(user?.dob) != null ? String(profileAge(user?.dob)) : "—"} />
           <InfoRow icon="transgender-outline" label="Sex / Gender" value={user?.sex || "—"} />
           <InfoRow icon="briefcase-outline" label="Occupation" value={user?.occupation || "—"} isLast />
         </View>

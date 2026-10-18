@@ -13,7 +13,10 @@ function setup() {
   const requestJson = async url => { request=url; if (result instanceof Error) throw result; return await result; };
   const module = { exports:{} };
   const code = babel.transformSync(fs.readFileSync(path.join(__dirname,'../src/utils/userProfile.js'),'utf8'), {configFile:false,babelrc:false,plugins:[require.resolve('@babel/plugin-transform-modules-commonjs')]}).code;
-  const mocks = {'@react-native-async-storage/async-storage':storage,'../config/config':{API_BASE_URL:'https://api.example.test'},'./patientData':{requestJson,dateKey:v=>typeof v==='string'?v.slice(0,10):''}};
+  const fields = { exports: {} };
+  const fieldsCode = babel.transformSync(fs.readFileSync(path.join(__dirname,'../src/utils/profileFields.js'),'utf8'), {configFile:false,babelrc:false,plugins:[require.resolve('@babel/plugin-transform-modules-commonjs')]}).code;
+  vm.runInThisContext(`(function(module,exports){${fieldsCode}\n})`)(fields,fields.exports);
+  const mocks = {'./profileFields':fields.exports,'@react-native-async-storage/async-storage':storage,'../config/config':{API_BASE_URL:'https://api.example.test'},'./patientData':{requestJson,dateKey:v=>typeof v==='string'?v.slice(0,10):''}};
   vm.runInThisContext(`(function(require,module,exports){${code}\n})`)(name=>mocks[name],module,module.exports);
   return { cached,store,refresh:module.exports.refreshUserProfile,respond:value=>{result=value;},request:()=>request };
 }
