@@ -28,6 +28,8 @@ import CustomAlertModal from "../components/CustomAlertModal";
 export default function EditProfileScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const savingRef = useRef(false);
+  const confirmationRef = useRef(false);
+  const [showSaveConfirmation, setShowSaveConfirmation] = useState(false);
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState(null);
 
@@ -154,8 +156,22 @@ export default function EditProfileScreen({ navigation }) {
     return Object.keys(newErrors).length === 0;
   };
 
+  const cancelSaveConfirmation = () => {
+    confirmationRef.current = false;
+    setShowSaveConfirmation(false);
+  };
+
+  const requestSave = () => {
+    if (savingRef.current || loading || !user || !validateForm()) return;
+    confirmationRef.current = true;
+    setShowSaveConfirmation(true);
+  };
+
   const handleSave = async () => {
-    if (savingRef.current || loading || !validateForm()) return;
+    if (!confirmationRef.current || savingRef.current || loading) return;
+    confirmationRef.current = false;
+    setShowSaveConfirmation(false);
+    if (!validateForm()) return;
     if (!user || !user.id) {
       setAlertConfig({
         visible: true,
@@ -289,7 +305,13 @@ export default function EditProfileScreen({ navigation }) {
           </View>
           <Text style={styles.changePhotoText}>Tap camera to select photo</Text>
           {newImagePickerAsset && (
-            <Text style={styles.stagedBadge}>Photo selected (Tap Save Changes to apply)</Text>
+            <View style={{ alignItems: 'center', gap: 8 }}>
+              <Text style={styles.stagedBadge}>Photo preview — confirm Save Changes to apply</Text>
+              <TouchableOpacity accessibilityRole="button" disabled={loading} onPress={() => {
+                setNewImagePickerAsset(null);
+                setProfileImage(fileUrl(user?.profile_picture || user?.profile_pic || user?.profile_image, API_BASE_URL));
+              }}><Text style={styles.changePhotoText}>Cancel Photo</Text></TouchableOpacity>
+            </View>
           )}
         </View>
 
@@ -398,9 +420,9 @@ export default function EditProfileScreen({ navigation }) {
               <View style={{ flex: 1, justifyContent: 'center', padding: 24, backgroundColor: 'rgba(0,0,0,0.4)' }}>
                 <View accessibilityViewIsModal style={{ backgroundColor: 'white', padding: 20, borderRadius: 20 }}>
                   <Text style={[styles.label, { marginBottom: 16 }]}>Select Sex</Text>
-                  {['', 'Male', 'Female'].map(value => (
-                    <TouchableOpacity key={value || 'empty'} accessibilityRole="radio" accessibilityLabel={value || 'Select Sex (blank)'} accessibilityState={{ checked: sex === value }} onPress={() => { setSex(value); setShowSexPicker(false); }} style={{ padding: 16 }}>
-                      <Text style={{ color: colors.ink }}>{value || 'Select Sex'}</Text>
+                  {['Male', 'Female'].map(value => (
+                    <TouchableOpacity key={value} accessibilityRole="radio" accessibilityLabel={value} accessibilityState={{ checked: sex === value }} onPress={() => { setSex(value); setShowSexPicker(false); }} style={{ padding: 16 }}>
+                      <Text style={{ color: colors.ink }}>{value}</Text>
                     </TouchableOpacity>
                   ))}
                   <TouchableOpacity accessibilityRole="button" onPress={() => setShowSexPicker(false)} style={{ padding: 16 }}><Text style={{ color: colors.ink }}>Cancel</Text></TouchableOpacity>
@@ -423,14 +445,28 @@ export default function EditProfileScreen({ navigation }) {
           </View>
         </View>
 
-        <TouchableOpacity accessibilityRole="button" style={styles.saveBtn} onPress={handleSave} disabled={loading || !user}>
+        <TouchableOpacity accessibilityRole="button" style={styles.saveBtn} onPress={requestSave} disabled={loading || !user}>
           {loading ? (
             <ActivityIndicator color={colors.ink} />
           ) : (
             <Text style={styles.saveBtnText}>Save Changes</Text>
           )}
         </TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" disabled={loading} onPress={() => navigation.goBack()} style={{ padding: 16, alignItems: 'center' }}>
+          <Text style={styles.changePhotoText}>Cancel Changes</Text>
+        </TouchableOpacity>
       </ScrollView>
+
+      <CustomAlertModal
+        visible={showSaveConfirmation}
+        type="warning"
+        title="Save Profile Changes?"
+        message="Save your information and selected profile photo? Your changes will then appear on web and mobile."
+        primaryText="Confirm Save"
+        secondaryText="Keep Editing"
+        onPrimaryPress={handleSave}
+        onSecondaryPress={cancelSaveConfirmation}
+      />
 
       {/* Reusable Custom Rounded Alert */}
       <CustomAlertModal

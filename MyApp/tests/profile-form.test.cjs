@@ -89,11 +89,12 @@ test('mobile has the same sex options as web and derives read-only age from DOB'
  h.mount('EditProfileScreen');await h.runEffects();
  let age=all(h.tree()).find(n=>n.props?.accessibilityLabel==='Age');assert.equal(age.props.editable,false);assert.equal(age.props.onChangeText,undefined);assert.equal(age.props.value,'');
  const sex=all(h.tree()).find(n=>n.props?.accessibilityRole==='button'&&n.props?.accessibilityLabel==='Select Sex');sex.props.onPress();h.render();
- const options=all(h.tree()).filter(n=>n.props?.accessibilityRole==='radio');assert.deepEqual(options.map(n=>n.props.accessibilityLabel),['Select Sex (blank)','Male','Female']);
+ const options=all(h.tree()).filter(n=>n.props?.accessibilityRole==='radio');assert.deepEqual(options.map(n=>n.props.accessibilityLabel),['Male','Female']);
  options.find(n=>n.props.accessibilityLabel==='Female').props.onPress();h.render();
  all(h.tree()).find(n=>n.props?.accessibilityLabel==='YYYY-MM-DD').props.onChangeText('2000-01-02');h.render();
  const {profileAge}=h.load('src/utils/profileFields.js');age=all(h.tree()).find(n=>n.props?.accessibilityLabel==='Age');assert.equal(age.props.value,String(profileAge('2000-01-02')));
  await button(h,'Save Changes').props.onPress();h.render();
+ assert.equal(payload,undefined); await alert(h).props.onPrimaryPress();h.render();
  assert.deepEqual(payload,{id:7,dob:'2000-01-02',sex:'Female'});assert.equal(JSON.parse(h.storage.get('userData')).age,profileAge('2000-01-02'));assert.equal(JSON.parse(h.storage.get('userData')).allergies,'Preserve');
 });
 test('mobile refresh does not overwrite a profile saved while the network response was pending',async()=>{
@@ -102,4 +103,40 @@ test('mobile refresh does not overwrite a profile saved while the network respon
  const pending=refreshUserProfile(JSON.parse(h.storage.get('userData')));await flush();
  h.storage.set('userData',JSON.stringify({id:7,email:'patient@example.test',occupation:'Just saved'}));
  finish(response({id:7,email:'patient@example.test',occupation:'Stale response'}));assert.equal(await pending,null);assert.equal(JSON.parse(h.storage.get('userData')).occupation,'Just saved');
+});
+
+
+test('mobile selections and photo previews do not publish until Confirm Save, and cancel stays local', async () => {
+ const h=harness();const writes=[];
+ let server={id:7,email:'patient@example.test',first_name:'Test',last_name:'Patient',sex:'Male',dob:'2000-01-02',occupation:'Original',profile_picture:'uploads/original.png'};
+ global.fetch=async(url,options)=>{
+   if(url.includes('user-profile'))return response({...server});
+   writes.push([url,options]);
+   if(url.includes('upload-profile-picture')){server.profile_picture='uploads/confirmed.png';return response({imagePath:server.profile_picture});}
+   Object.assign(server,JSON.parse(options.body));return response({user:{...server}});
+ };
+ h.mount('EditProfileScreen');await h.runEffects();const saved=h.storage.get('userData');
+ all(h.tree()).find(n=>n.props?.accessibilityLabel==='Select Sex').props.onPress();h.render();
+ all(h.tree()).find(n=>n.props?.accessibilityRole==='radio'&&n.props.accessibilityLabel==='Female').props.onPress();h.render();
+ all(h.tree()).find(n=>n.props?.accessibilityLabel==='e.g. Student, Engineer').props.onChangeText('Draft');h.render();
+ await all(h.tree()).find(n=>n.props?.accessibilityLabel==='Change profile photo').props.onPress();h.render();
+ assert.equal(writes.length,0);assert.equal(h.storage.get('userData'),saved);assert.equal(server.sex,'Male');
+ await button(h,'Save Changes').props.onPress();h.render();
+ assert.equal(alert(h).props.title,'Save Profile Changes?');assert.equal(writes.length,0);
+ alert(h).props.onSecondaryPress();h.render();assert.equal(alert(h),undefined);assert.equal(h.storage.get('userData'),saved);
+ // Cancel just the preview; choosing another photo must still remain staged.
+ button(h,'Cancel Photo').props.onPress();h.render();assert.equal(writes.length,0);
+ await all(h.tree()).find(n=>n.props?.accessibilityLabel==='Change profile photo').props.onPress();h.render();
+ await button(h,'Save Changes').props.onPress();h.render();
+ const confirm=alert(h).props.onPrimaryPress;const first=confirm(),duplicate=confirm();await Promise.all([first,duplicate]);h.render();
+ assert.equal(writes.length,2);assert.equal(server.sex,'Female');assert.equal(server.occupation,'Draft');assert.equal(server.profile_picture,'uploads/confirmed.png');
+ assert.equal(alert(h).props.title,'Profile Updated');assert.equal(JSON.parse(h.storage.get('userData')).sex,'Female');
+});
+
+test('leaving the mobile editor discards selections without writing server or shared cache', async () => {
+ const h=harness();const writes=[];
+ global.fetch=async(url,options)=>{if(options?.method)writes.push(url);return response({id:7,email:'patient@example.test',first_name:'Test',last_name:'Patient',sex:'Male'});};
+ h.mount('EditProfileScreen');await h.runEffects();const saved=h.storage.get('userData');
+ all(h.tree()).find(n=>n.props?.accessibilityRole==='radio'&&n.props.accessibilityLabel==='Female').props.onPress();h.render();
+ button(h,'Cancel Changes').props.onPress();assert.equal(writes.length,0);assert.equal(h.storage.get('userData'),saved);assert.deepEqual(h.calls,[['back']]);
 });

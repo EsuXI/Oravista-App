@@ -147,6 +147,7 @@ test('profile upload failure stops the profile save and reports the failed opera
   h.mount('EditProfileScreen'); await h.runEffects();
   await all(h.tree()).find(n => n.props?.accessibilityLabel === 'Change profile photo').props.onPress(); h.render();
   await button(h, 'Save Changes').props.onPress(); h.render();
+  await alert(h).props.onPrimaryPress(); h.render();
   assert.ok(!urls.some(url => url.includes('update-profile')));
   assert.equal(alert(h).props.title, 'Update Not Completed');
   assert.equal(alert(h).props.message, 'Upload unavailable');
@@ -161,6 +162,7 @@ test('profile saves preserve medical fields and synchronize both cached name for
   h.mount('EditProfileScreen'); await h.runEffects();
   all(h.tree()).find(n => n.props?.accessibilityLabel === 'e.g. Student, Engineer').props.onChangeText('Student'); h.render();
   await button(h, 'Save Changes').props.onPress(); h.render();
+  await alert(h).props.onPrimaryPress(); h.render();
   assert.equal(payload.occupation, 'Student');
   assert.equal(payload.allergies, undefined); assert.equal(payload.policy_number, undefined);
   assert.equal(JSON.parse(h.storage.get('userData')).allergies, 'Existing allergy');
@@ -276,6 +278,7 @@ test('profile upload accepts the server imagePath and saves a remote URL', async
   h.mount('EditProfileScreen'); await h.runEffects();
   await all(h.tree()).find(n => n.props?.accessibilityLabel === 'Change profile photo').props.onPress(); h.render();
   await button(h, 'Save Changes').props.onPress(); h.render();
+  await alert(h).props.onPrimaryPress(); h.render();
   assert.equal(saved, undefined); // Photo-only edits use the upload endpoint, not an information overwrite.
   assert.equal(alert(h).props.title, 'Profile Updated');
 });
