@@ -44,6 +44,7 @@ function harness() {
   const mocks = {
     react, 'react-native': native,
     'expo-print': {printToFileAsync: async () => ({uri:'file:///report.pdf'})},
+    'expo-file-system/legacy': { documentDirectory: 'file:///documents/', getInfoAsync: async () => ({exists:true,size:1024,isDirectory:false}), makeDirectoryAsync: async () => {}, copyAsync: async () => {} },
     'expo-sharing': {isAvailableAsync: async () => true, shareAsync: async () => {}},
     '@expo/vector-icons': { Ionicons: 'Icon' },
     '@react-navigation/native': { useNavigation: () => navigation, useFocusEffect: f => react.useEffect(f, []) },
@@ -64,7 +65,7 @@ function harness() {
     return module.exports;
   }
   function render() { cursor = 0; tree = renderFn(); return tree; }
-  return { load, calls, links, alerts, storage,
+  return { load, calls, links, alerts, storage, mocks,
     mount: (name, props = {}) => { const Component = load(`src/screens/${name}.js`).default; renderFn = () => Component({ navigation, ...props }); return render(); },
     render, runEffects: async () => { for (const effect of effects.splice(0)) effect(); await flush(); return render(); },
     dispose: () => { for (const cell of cells) cell?.cleanup?.(); },
@@ -453,4 +454,140 @@ test('session transport sends credentials only to our API and handles session ex
  assert.equal(requests[0].options.headers.get('Authorization'),'Bearer fixture-session');assert.equal(requests[1].options.headers,undefined);
  let expired=false;onSessionExpired(()=>{expired=true;});global.fetch=async()=>({status:401,clone:()=>({json:async()=>({code:'SESSION_EXPIRED'})})});installAuthFetch();
  await global.fetch(API_BASE_URL+'/api/patient-records/7');assert.equal(expired,true);assert.equal(h.storage.has('userToken'),false);
+});
+
+
+test('Records health sections collapse independently and files without IDs expand individually', async () => {
+  const h=harness();
+  global.fetch=async url => response(url.includes('patient-records/') ? [
+    {file_name:'one.pdf',file_path:'uploads/one.pdf'},
+    {file_name:'two.pdf',file_path:'uploads/two.pdf'}
+  ] : url.includes('/analytics') ? {brushing_frequency:2} : url.includes('patient-final-diagnoses') ? [] : {risk_score:10});
+  h.mount('RecordsScreen');await h.runEffects();
+  const list=()=>all(h.tree()).find(n=>n.type==='FlatList');
+  const header=()=>all(list().props.ListHeaderComponent);
+  const toggle=label=>header().find(n=>n.props?.accessibilityLabel===label);
+  assert.equal(toggle('Health Context and Lifestyle').props.accessibilityState.expanded,false);
+  assert.equal(toggle('AI Assessment').props.accessibilityState.expanded,false);
+  toggle('Health Context and Lifestyle').props.onPress();h.render();
+  assert.equal(toggle('Health Context and Lifestyle').props.accessibilityState.expanded,true);
+  assert.equal(toggle('AI Assessment').props.accessibilityState.expanded,false);
+  const row=i=>all(list().props.renderItem({item:list().props.data[i]})).find(n=>n.props?.accessibilityState?.expanded!==undefined);
+  row(0).props.onPress();h.render();
+  assert.equal(row(0).props.accessibilityState.expanded,true);
+  assert.equal(row(1).props.accessibilityState.expanded,false);
+});
+
+
+test('health service retries one transient gateway failure but never retries denied access', async () => {
+  const {fetchPatientHealth}=harness().load('src/utils/patientRecords');
+  let calls=0;
+  global.fetch=async()=>++calls===1 ? response({},503) : response({brushing_frequency:2});
+  assert.equal((await fetchPatientHealth(7,'analytics')).brushing_frequency,2);
+  assert.equal(calls,2);
+  calls=0;global.fetch=async()=>{calls++;return response({},403);};
+  await assert.rejects(fetchPatientHealth(7,'analytics'),/sign in again/);
+  assert.equal(calls,1);
+  calls=0;global.fetch=async()=>{calls++;return response({},503);};
+  await assert.rejects(fetchPatientHealth(7,'analytics'),/temporarily unavailable/);
+  assert.equal(calls,2);
+});
+
+test('medical report is retained and verified before an external viewer can receive it', async () => {
+  const h=harness(),files=new Map([['file:///print/source.pdf',2048]]),events=[];let corrupt=false;
+  Object.assign(h.mocks['expo-file-system/legacy'],{
+    getInfoAsync:async uri=>({exists:files.has(uri),size:files.get(uri)||0,isDirectory:false}),
+    makeDirectoryAsync:async uri=>events.push(['mkdir',uri]),
+    copyAsync:async({from,to})=>{events.push(['copy',from,to]);files.set(to,corrupt ? 0 : files.get(from));},
+  });
+  const {retainMedicalReport}=h.load('src/utils/reportFile');
+  const saved=await retainMedicalReport('file:///print/source.pdf',7,123);
+  assert.equal(saved,'file:///documents/medical-reports/King_Epres_Patient_Report_7_123.pdf');
+  assert.equal(files.get(saved),2048);assert.equal(events[0][0],'mkdir');
+  await assert.rejects(retainMedicalReport('file:///missing.pdf',7),/missing or empty/);
+  corrupt=true;
+  await assert.rejects(retainMedicalReport('file:///print/source.pdf',7,456),/completely/);
+});
+
+test('attachments become usable while health service is still pending', async () => {
+  const h=harness();let release;
+  const delayed=new Promise(resolve=>{release=resolve;});
+  global.fetch=async url=>url.includes('/api/patient/get/') ? delayed :
+    response(url.includes('patient-records/') ? [{id:1,file_name:'record.pdf'}] : []);
+  h.mount('RecordsScreen');await h.runEffects();
+  const list=all(h.tree()).find(n=>n.type==='FlatList');
+  assert.equal(list.props.data[0].file_name,'record.pdf');
+  assert.ok(all(list.props.ListHeaderComponent).some(n=>n.props?.accessibilityLabel==='Loading health information'));
+  release(response({}));await flush();h.render();
+});
+
+test('Android selection bypasses the crashing native cropper and remains an unsaved draft', async () => {
+  const h=harness();let options;const requests=[];
+  h.mocks['expo-image-picker'].launchImageLibraryAsync=async value=>{
+    options=value;return {canceled:false,assets:[{uri:'file:///photo.jpg',mimeType:'image/jpeg'}]};
+  };
+  global.fetch=async(url,init)=>{requests.push([url,init]);return response({id:7,email:'patient@example.test',first_name:'Patient',last_name:'Example'});};
+  h.mount('EditProfileScreen');await h.runEffects();
+  await all(h.tree()).find(n=>n.props?.accessibilityLabel==='Change profile photo').props.onPress();h.render();
+  assert.equal(options.allowsEditing,false);
+  assert.ok(text(h.tree()).includes('Photo preview'));
+  assert.ok(!requests.some(([url])=>url.includes('upload-profile-picture')));
+  button(h,'Cancel Photo').props.onPress();h.render();
+  assert.ok(!text(h.tree()).includes('Photo preview'));
+});
+
+
+test('clinic medical PDF keeps saved findings and never fills uncollected history answers', () => {
+ const { medicalReportHtml } = harness().load('src/utils/patientRecords.js');
+ const html = medicalReportHtml('Test <Patient>', {
+  analytics:{age:22,sex:'Female'},risk:{health_grade:'At Risk'},
+  diagnoses:[{id:3,ai_findings:{human_verified:true,annotations:[{name:'Retained finding'}]},clinical_notes:'Saved notes'},
+   {id:4,ai_findings:{human_verified:false,annotations:[{name:'Unverified prediction'}]}}],
+ }, new Date('2026-10-24'), {phone:'09000000000',branch:'Gil Puyat, Pasay'});
+ assert.match(html,/KING EPRES DENTAL CLINIC/);
+ assert.match(html,/Test &lt;Patient&gt;/);
+ assert.match(html,/09000000000/);
+ assert.match(html,/Retained finding/);
+ assert.match(html,/Saved notes/);
+ assert.doesNotMatch(html,/Unverified prediction|checked|STI Sta|0874D/);
+});
+
+
+test('stalled report generation times out without publishing a late PDF and permits retry', async () => {
+ const h = harness();
+ const { generateMedicalReport, withDeadline } = h.load('src/utils/reportGeneration.js');
+ let finishOldPrint, saved = [];
+ const services = {
+  available: async () => true,
+  fetchData: async () => ({ analytics:{}, risk:{}, diagnoses:[] }),
+  print: () => new Promise(resolve => {finishOldPrint=resolve;}),
+  retain: async uri => { saved.push(uri); return uri; },
+  deadline: (operation, ms, message) => withDeadline(operation, 15, message),
+ };
+ await assert.rejects(generateMedicalReport({id:7}, services), /Free some device storage/);
+ const uri = await generateMedicalReport({id:7}, {...services,print:async()=>({uri:'file:///retry.pdf'})});
+ assert.equal(uri,'file:///retry.pdf');
+ finishOldPrint({uri:'file:///old.pdf'}); await flush();
+ assert.deepEqual(saved,['file:///retry.pdf']);
+ await assert.rejects(generateMedicalReport({id:7}, {...services,available:async()=>false}), /not available/);
+});
+
+
+test('Records restores the report action after failure and shares only a successful retry', async () => {
+ const h=harness();
+ const generation=h.load('src/utils/reportGeneration.js');
+ generation.generateMedicalReport=async()=>{throw new Error('Generating the PDF took too long. Free some device storage, then try again.');};
+ const shared=[];h.mocks['expo-sharing'].shareAsync=async uri=>shared.push(uri);
+ global.fetch=async url=>response(url.includes('oral-health-risk')?{}:url.includes('analytics')?{}:[]);
+ h.mount('RecordsScreen');await h.runEffects();await flush();h.render();
+ const generate=()=>all(all(h.tree()).find(n=>n.type==='FlatList')?.props.ListHeaderComponent).find(n=>n.props?.accessibilityLabel==='Generate medical report PDF');
+ assert.equal(generate().props.disabled,false);
+ await generate().props.onPress();h.render();
+ assert.equal(alert(h).props.title,'Could Not Generate Report');
+ assert.equal(generate().props.disabled,false);assert.deepEqual(shared,[]);
+ alert(h).props.onPrimaryPress();
+ generation.generateMedicalReport=async()=> 'file:///verified-retry.pdf';
+ await generate().props.onPress();h.render();
+ assert.deepEqual(shared,['file:///verified-retry.pdf']);
+ assert.equal(generate().props.disabled,false);
 });

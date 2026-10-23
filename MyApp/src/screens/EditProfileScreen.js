@@ -113,7 +113,9 @@ export default function EditProfileScreen({ navigation }) {
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      allowsEditing: true,
+      // Android's native cropper can crash before JS receives an error.
+      // Keep the selected image intact; the circular avatar supplies the crop.
+      allowsEditing: Platform.OS === 'ios',
       aspect: [1, 1],
       quality: 0.7,
     });

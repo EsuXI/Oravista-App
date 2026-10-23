@@ -44,7 +44,7 @@ function load(filename) {
     if (name === 'react-native-safe-area-context') return { useSafeAreaInsets: () => ({ top: 24, bottom: 34, left: 0, right: 0 }) };
     if (name === '@react-native-async-storage/async-storage') return { getItem: async () => null };
     if (name === 'react-native-calendars') return { Calendar: 'Calendar' };
-    if (['expo-image-picker','expo-print','expo-sharing'].includes(name)) return {};
+    if (['expo-image-picker','expo-print','expo-sharing','expo-file-system/legacy'].includes(name)) return {};
     if (name === '@react-native-community/datetimepicker') return 'DateTimePicker';
     throw new Error(`Add an explicit test stub for ${name}`);
   };

@@ -22,12 +22,11 @@ import ScreenHeader from "../components/ScreenHeader";
 import CustomAlertModal from "../components/CustomAlertModal";
 import { API_BASE_URL } from "../config/config";
 
-import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { generateMedicalReport } from '../utils/reportGeneration';
 import {
   withRecordKeys, fetchPatientHealth, fetchFinalDiagnoses, finalFindings,
   clinicalNotes, healthRows, riskRows, riskAnalysis, recordText,
-  fetchMedicalReport, medicalReportHtml,
 } from '../utils/patientRecords';
 
 const CATEGORIES = ["All", "PDF", "Images", "Other files"];
@@ -42,12 +41,16 @@ export default function RecordsScreen() {
   const [page, setPage] = useState(1);
   const listRef = useRef(null);
   const [expandedId, setExpandedId] = useState(null);
+  const [showHealth, setShowHealth] = useState(false);
+  const [showRisk, setShowRisk] = useState(false);
+  const [expandedDiagnosis, setExpandedDiagnosis] = useState(null);
 
   const [patient, setPatient] = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [risk, setRisk] = useState(null);
   const [diagnoses, setDiagnoses] = useState([]);
   const [sectionErrors, setSectionErrors] = useState({});
+  const [sectionLoading, setSectionLoading] = useState({});
   const [generatingReport, setGeneratingReport] = useState(false);
   const requestVersion = useRef(0);
   const reportBusy = useRef(false);
@@ -67,6 +70,7 @@ export default function RecordsScreen() {
     setLoading(true);
     setLoadError('');
     setSectionErrors({});
+    setSectionLoading({ analytics: true, risk: true, diagnoses: true });
     setPatient(null);
     setRecords([]);
     setDiagnoses([]);
@@ -86,23 +90,30 @@ export default function RecordsScreen() {
         }
       }
       if (!id) throw new Error('Could not identify your account. Please log in again.');
-      const results = await Promise.allSettled([
-        requestJson(`${API_BASE_URL}/api/patient-records/${encodeURIComponent(id)}`)
-          .then(data => withRecordKeys(requireArray(data))),
-        fetchPatientHealth(id, 'analytics'),
-        fetchPatientHealth(id, 'oral-health-risk'),
-        fetchFinalDiagnoses(id),
-      ]);
-      if (version !== requestVersion.current) return;
       setPatient({ ...user, id });
-      const errors = {};
-      const setters = [setRecords, setAnalytics, setRisk, setDiagnoses];
-      const keys = ['attachments', 'analytics', 'risk', 'diagnoses'];
-      results.forEach((result, index) => {
-        if (result.status === 'fulfilled') setters[index](result.value);
-        else errors[keys[index]] = result.reason?.message || 'Unable to load this section. Please try again.';
-      });
-      setSectionErrors(errors);
+      const loadSection = async (key, request, setter) => {
+        try {
+          const value = await request;
+          if (version === requestVersion.current) setter(value);
+        } catch (error) {
+          if (version === requestVersion.current) setSectionErrors(current => ({
+            ...current, [key]: error.message || 'Unable to load this section. Please try again.',
+          }));
+        } finally {
+          if (version === requestVersion.current) {
+            setSectionLoading(current => ({ ...current, [key]: false }));
+            if (key === 'attachments') setLoading(false);
+          }
+        }
+      };
+      // Attachments remain usable while the independent health service wakes up.
+      await Promise.all([
+        loadSection('attachments', requestJson(`${API_BASE_URL}/api/patient-records/${encodeURIComponent(id)}`)
+          .then(data => withRecordKeys(requireArray(data))), setRecords),
+        loadSection('analytics', fetchPatientHealth(id, 'analytics'), setAnalytics),
+        loadSection('risk', fetchPatientHealth(id, 'oral-health-risk'), setRisk),
+        loadSection('diagnoses', fetchFinalDiagnoses(id), setDiagnoses),
+      ]);
     } catch (error) {
       if (version === requestVersion.current) setLoadError(error.message || 'Unable to load your records. Please try again.');
     } finally {
@@ -121,16 +132,9 @@ export default function RecordsScreen() {
     setGeneratingReport(true);
     const version = requestVersion.current;
     try {
-      if (!(await Sharing.isAvailableAsync())) throw new Error('Saving or sharing PDFs is not available on this device.');
-      const data = await fetchMedicalReport(patient.id);
+      const retainedUri = await generateMedicalReport(patient);
       if (version !== requestVersion.current) return;
-      const patientName = [patient.firstName || patient.first_name, patient.lastName || patient.last_name]
-        .filter(value => typeof value === 'string' && value.trim()).join(' ') || 'Patient';
-      const { uri } = await Print.printToFileAsync({
-        html: medicalReportHtml(patientName, data), width: 595, height: 842,
-      });
-      if (version !== requestVersion.current) return;
-      await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: '.pdf', dialogTitle: 'Save or share your OraVista medical report' });
+      await Sharing.shareAsync(retainedUri, { mimeType: 'application/pdf', UTI: '.pdf', dialogTitle: 'Save or share your OraVista medical report' });
     } catch (error) {
       if (version === requestVersion.current) setAlertConfig({
         visible: true, type: 'error', title: 'Could Not Generate Report',
@@ -213,14 +217,14 @@ export default function RecordsScreen() {
     return (
       <View style={styles.card}>
         <View style={{flexDirection:'row',alignItems:'center',gap:8}}>
-          <TouchableOpacity accessibilityRole="button" accessibilityState={{expanded:expandedId === item.id}} onPress={() => setExpandedId(expandedId === item.id ? null : item.id)} style={{flex:1,minHeight:48,justifyContent:'center'}}>
+          <TouchableOpacity accessibilityRole="button" accessibilityState={{expanded:expandedId === item.recordKey}} onPress={() => setExpandedId(expandedId === item.recordKey ? null : item.recordKey)} style={{flex:1,minHeight:48,justifyContent:'center'}}>
             <Text style={styles.title} numberOfLines={1}>{recordText(item.file_name, 'Medical record')}</Text>
             <Text style={styles.infoText}>{displayDate(item.upload_date)} · REC-{recordText(item.id)}</Text>
             <Text style={styles.infoText} numberOfLines={1}>{displayDoctor}</Text>
           </TouchableOpacity>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Open ${item.file_name || 'medical record'}`} style={styles.downloadBtn} onPress={() => handleDownload(item.file_path)}><Ionicons name="download-outline" size={18} color={colors.accent}/></TouchableOpacity>
         </View>
-        {expandedId === item.id && <Text style={styles.infoText}>{recordText(item.file_name)} · {displayAddress}</Text>}
+        {expandedId === item.recordKey && <Text style={styles.infoText}>{recordText(item.file_name)} · {displayAddress}</Text>}
       </View>
     );
   };
@@ -230,12 +234,15 @@ export default function RecordsScreen() {
       .join(' ').toLowerCase().includes(searchQuery.trim().toLowerCase())
   );
 
-  const renderRows = rows => rows.map(([label, value]) => (
-    <View key={label} style={styles.resultRow}>
-      <Text style={styles.resultLabel}>{label}</Text>
-      <Text style={styles.resultText}>{value}</Text>
-    </View>
-  ));
+  const renderRows = rows => rows.map(([label, value]) => {
+    const longValue = String(value).length > 65;
+    return (
+      <View key={label} style={[styles.resultRow, longValue && styles.longResultRow]}>
+        <Text style={[styles.resultLabel, styles.rowLabel]}>{label}</Text>
+        <Text style={[styles.resultText, styles.rowValue, longValue && styles.longValue]}>{value}</Text>
+      </View>
+    );
+  });
 
   const renderSectionError = key => (
     <LoadError message={sectionErrors[key]} onRetry={fetchRecords} />
@@ -250,28 +257,40 @@ export default function RecordsScreen() {
         {generatingReport ? <ActivityIndicator color={colors.accent} /> : <Ionicons name="document-text-outline" size={20} color={colors.accent} />}
         <Text style={styles.loadMoreText}>{generatingReport ? 'Generating Report…' : 'Generate Medical Report PDF'}</Text>
       </TouchableOpacity>
-      <View style={styles.card}>
-        <Text style={styles.title}>Health Context &amp; Lifestyle</Text>
-        {sectionErrors.analytics ? renderSectionError('analytics') : renderRows(healthRows(analytics))}
+      <View style={styles.summaryCard}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Health Context and Lifestyle" accessibilityState={{ expanded: showHealth }} onPress={() => setShowHealth(value => !value)} style={styles.sectionToggle}>
+          <View style={{ flex: 1 }}><Text style={styles.title}>Health Context &amp; Lifestyle</Text><Text style={styles.infoText}>{sectionErrors.analytics ? 'Unable to load - retry below' : 'Tap to view your saved health information'}</Text></View>
+          <Ionicons name={showHealth ? 'chevron-up' : 'chevron-down'} size={20} color={colors.accent} />
+        </TouchableOpacity>
+        {sectionLoading.analytics ? <ActivityIndicator accessibilityLabel="Loading health information" color={colors.accent} /> : sectionErrors.analytics ? renderSectionError('analytics') : showHealth && renderRows(healthRows(analytics))}
       </View>
-      <View style={styles.card}>
-        <Text style={styles.title}>AI Assessment</Text>
-        {sectionErrors.risk ? renderSectionError('risk') : <>
-          {renderRows(riskRows(risk))}
+      <View style={styles.summaryCard}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="AI Assessment" accessibilityState={{ expanded: showRisk }} onPress={() => setShowRisk(value => !value)} style={styles.sectionToggle}>
+          <View style={{ flex: 1 }}><Text style={styles.title}>AI Assessment</Text><Text style={styles.infoText}>{sectionErrors.risk ? 'Unable to load - retry below' : 'Tap to view risk results and recommendations'}</Text></View>
+          <Ionicons name={showRisk ? 'chevron-up' : 'chevron-down'} size={20} color={colors.accent} />
+        </TouchableOpacity>
+        {sectionLoading.risk ? <ActivityIndicator accessibilityLabel="Loading AI assessment" color={colors.accent} /> : sectionErrors.risk ? renderSectionError('risk') : showRisk && <>
+          <View style={styles.riskMetrics}>{riskRows(risk).map(([label, value]) => (
+            <View key={label} style={styles.riskMetric}><Text style={styles.metricLabel}>{label}</Text><Text style={styles.metricValue}>{value}</Text></View>
+          ))}</View>
           {renderRows(riskAnalysis(risk))}
         </>}
       </View>
       <Text style={styles.sectionTitle}>Dentist-Saved Final Diagnoses</Text>
-      {sectionErrors.diagnoses ? renderSectionError('diagnoses') : <>
+      {sectionLoading.diagnoses ? <ActivityIndicator accessibilityLabel="Loading saved diagnoses" color={colors.accent} /> : sectionErrors.diagnoses ? renderSectionError('diagnoses') : <>
         {!visibleDiagnoses.length && <Text style={styles.sectionEmpty}>{diagnoses.length ? 'No matching final diagnoses.' : 'No dentist-saved final diagnoses are available yet.'}</Text>}
         {visibleDiagnoses.slice(0, diagnosisPage * ITEMS_PER_PAGE).map(record => (
-          <View key={record.recordKey} style={styles.card}>
-            <Text style={styles.title}>Final Diagnosis{record.id != null ? ` #${recordText(record.id)}` : ''}</Text>
-            <Text style={styles.resultText}>Scan date: {displayDate(record.scan_date)}</Text>
+          <View key={record.recordKey} style={styles.summaryCard}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Final diagnosis ${record.id ?? ''}`} accessibilityState={{ expanded: expandedDiagnosis === record.recordKey }} onPress={() => setExpandedDiagnosis(value => value === record.recordKey ? null : record.recordKey)} style={styles.sectionToggle}>
+              <View style={{ flex: 1 }}><Text style={styles.title}>Final Diagnosis{record.id != null ? ` #${recordText(record.id)}` : ''}</Text><Text style={styles.infoText}>{displayDate(record.scan_date)} - Tap for findings and notes</Text></View>
+              <Ionicons name={expandedDiagnosis === record.recordKey ? 'chevron-up' : 'chevron-down'} size={20} color={colors.accent} />
+            </TouchableOpacity>
+            {expandedDiagnosis === record.recordKey && <>
             <Text style={styles.resultLabel}>Final Findings Saved by the Dentist</Text>
             {finalFindings(record).map((finding, index) => <Text key={index} style={styles.finding}>• {finding}</Text>)}
             <Text style={styles.resultLabel}>Dentist’s Clinical Notes</Text>
             <Text style={styles.resultText}>{clinicalNotes(record)}</Text>
+            </>}
           </View>
         ))}
         {visibleDiagnoses.length > diagnosisPage * ITEMS_PER_PAGE && (
@@ -362,11 +381,21 @@ export default function RecordsScreen() {
 }
 
 const styles = StyleSheet.create({
-  reportButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16, borderRadius: 20, marginBottom: 16, backgroundColor: colors.aquaSoft, borderWidth: 1, borderColor: colors.border },
+  reportButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10, minHeight: 44, borderRadius: 14, marginBottom: 10, backgroundColor: colors.aquaSoft, borderWidth: 1, borderColor: colors.border },
   disabledButton: { opacity: 0.6 },
-  sectionTitle: { fontSize: 16, fontFamily: fonts.bold, color: colors.ink, marginBottom: 14 },
-  sectionEmpty: { fontSize: 13, fontFamily: fonts.regular, color: colors.muted, marginBottom: 20, lineHeight: 21 },
-  resultRow: { marginTop: 10, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: colors.border },
+  sectionTitle: { fontSize: 16, fontFamily: fonts.bold, color: colors.ink, marginBottom: 8, marginTop: 6 },
+  sectionEmpty: { fontSize: 13, fontFamily: fonts.regular, color: colors.muted, marginBottom: 12, lineHeight: 19 },
+  sectionToggle: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 44 },
+  summaryCard: { backgroundColor: colors.surface, borderRadius: 14, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: colors.border },
+  riskMetrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  riskMetric: { flexGrow: 1, flexBasis: 80, padding: 10, borderRadius: 10, backgroundColor: colors.aquaSoft },
+  metricLabel: { fontFamily: fonts.medium, fontSize: 11, color: colors.muted, marginBottom: 4 },
+  metricValue: { fontFamily: fonts.semiBold, fontSize: 15, color: colors.ink },
+  resultRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border },
+  rowLabel: { flex: 1, marginTop: 0, marginBottom: 0, lineHeight: 20 },
+  rowValue: { flex: 1, textAlign: 'right', lineHeight: 20 },
+  longResultRow: { flexDirection: 'column', gap: 4 },
+  longValue: { textAlign: 'left', flex: 0 },
   resultLabel: { fontFamily: fonts.semiBold, fontSize: 13, color: colors.ink, marginTop: 10, marginBottom: 6 },
   resultText: { fontFamily: fonts.regular, fontSize: 13, color: colors.muted, lineHeight: 22 },
   finding: { fontFamily: fonts.regular, fontSize: 13, color: colors.ink, lineHeight: 22, marginBottom: 6 },

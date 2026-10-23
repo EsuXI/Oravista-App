@@ -1,3 +1,4 @@
+import { patientRecordHtml, PATIENT_FORM_CSS } from './clinicRecordLayout';
 import { API_BASE_URL } from '../config/config';
 import { requestJson, requireArray, displayDate } from './patientData';
 
@@ -6,12 +7,12 @@ const AI_BASE_URL = (process.env.EXPO_PUBLIC_AI_BASE_URL?.trim() ||
 
 // The service uses specific 404 responses for assessments that do not exist yet.
 // Unknown routes and genuine request failures must still be shown as errors.
-export async function fetchPatientHealth(userId, section) {
+async function fetchPatientHealthAttempt(userId, section) {
   const labels = { analytics: 'Health history', 'oral-health-risk': 'Risk assessment' };
   const label = labels[section];
   if (!label || userId == null) throw new Error('Please sign in again to load your health information.');
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
+  const timer = setTimeout(() => controller.abort(), 30000);
   try {
     const response = await fetch(`${AI_BASE_URL}/api/patient/get/${encodeURIComponent(userId)}/${section}`, { signal: controller.signal, cache: 'no-store' });
     if (response.status === 204) return null;
@@ -23,17 +24,33 @@ export async function fetchPatientHealth(userId, section) {
     if (response.status === 404 && missingRecord) return null;
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) throw new Error(`${label} could not be accessed. Please sign in again.`);
-      throw new Error(`${label} is temporarily unavailable from the health service. Please try again.`);
+      const error = new Error(`${label} is temporarily unavailable from the health service. Please try again.`);
+      error.retryable = [502, 503, 504].includes(response.status);
+      throw error;
     }
     if (data === undefined) throw new Error(`${label} could not be read. Please try again.`);
     if (data === null) return null;
     if (typeof data !== 'object' || Array.isArray(data)) throw new Error(`${label} could not be read. Please try again.`);
     return Object.keys(data).length ? data : null;
   } catch (error) {
-    if (error.name === 'AbortError') throw new Error(`${label} took too long to load. Please try again.`);
+    if (error.name === 'AbortError') {
+      const timeout = new Error(`${label} took too long to load. Please try again.`);
+      timeout.retryable = true;
+      throw timeout;
+    }
     if (error instanceof TypeError) throw new Error(`${label} could not reach the health service. Check your connection and try again.`);
     throw error;
   } finally { clearTimeout(timer); }
+}
+
+// A cold health-service instance can exceed the first request deadline.
+// Retry once for timeouts and gateway failures; permission/data errors stay visible.
+export async function fetchPatientHealth(userId, section) {
+  try { return await fetchPatientHealthAttempt(userId, section); }
+  catch (error) {
+    if (!error.retryable) throw error;
+    return fetchPatientHealthAttempt(userId, section);
+  }
 }
 
 // Render values as text, never pass API objects directly to React Native Text.
@@ -118,14 +135,15 @@ function escapeHtml(value) {
   }[char]));
 }
 
-export function medicalReportHtml(patientName, data, date = new Date()) {
+export function medicalReportHtml(patientName, data, date = new Date(), patient = {}) {
   const table = rows => `<table><tbody>${rows.map(([label, value]) =>
     `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value)}</td></tr>`).join('')}</tbody></table>`;
   const diagnoses = data.diagnoses.filter(record => record.ai_findings?.human_verified === true);
   return `<!DOCTYPE html><html><head><meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>OraVista Medical Report</title><style>
-    @page { size: A4; margin: 18mm; }
+    <title>King Epres Patient Record</title><style>
+    @page { size: A4; margin: 14mm; }
+    ${PATIENT_FORM_CSS}
     body { font-family: Arial, sans-serif; color: #172b36; font-size: 11pt; line-height: 1.5; }
     h1, h2, h3 { color: #007f8e; break-after: avoid; page-break-after: avoid; }
     h1 { font-size: 22pt; } h2 { font-size: 15pt; margin-top: 24px; } h3 { font-size: 12pt; }
@@ -138,7 +156,8 @@ export function medicalReportHtml(patientName, data, date = new Date()) {
       transform: rotate(-30deg); color: rgba(76,175,80,0.18); font-size: 32pt; font-weight: bold; }
     .personal { color: #52666b; font-size: 9pt; }
     </style></head><body><div class="watermark">FOR PERSONAL USE ONLY</div>
-    <h1>OraVista Clinic</h1><p>Patient Report: ${escapeHtml(patientName)}</p>
+    ${patientRecordHtml({ ...patient, name: patientName }, data.analytics || {})}
+    <h1>King Epres Dental Clinic</h1><p>Patient Report: ${escapeHtml(patientName)}</p>
     <p>Date: ${escapeHtml(displayDate(date))}</p>
     <p class="personal">FOR PERSONAL USE ONLY</p>
     <h2>Health Context &amp; Lifestyle</h2>${table(healthRows(data.analytics))}
